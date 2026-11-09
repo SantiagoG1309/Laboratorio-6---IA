@@ -1,6 +1,8 @@
-"""Capas densas, activaciones, funciones de pérdida y optimizadores para la CNN en NumPy puro.
+"""Capas ocultas, activaciones, funciones de pérdida y optimizadores para la CNN en NumPy puro.
 
-Incluye capas densas (Fully Connected), ReLU, backpropagation, softmax, entropía cruzada y optimización por Momentum.
+Incluye las capas ocultas de la red de retropropagación (cada neurona conectada
+con todas las activaciones anteriores), ReLU, backpropagation, softmax, entropía
+cruzada y optimización por Momentum.
 """
 from __future__ import annotations
 
@@ -28,7 +30,14 @@ def cross_entropy(probs: np.ndarray, y: np.ndarray, sample_weights: np.ndarray |
     return float(loss.mean())
 
 
-class Dense:
+class HiddenLayer:
+    """Capa oculta de backpropagation: z = x·W + b (y ReLU en la capa siguiente).
+
+    El mismo bloque se usa al final de la red para proyectar las activaciones
+    ocultas a los logits de las tres clases; en ese caso recibe el nombre de
+    capa de salida.
+    """
+
     def __init__(
         self,
         n_in: int,
@@ -63,7 +72,7 @@ class Dense:
 
     def backward(self, dout: np.ndarray) -> np.ndarray:
         if self.x is None:
-            raise RuntimeError("Dense.backward() llamado antes de forward()")
+            raise RuntimeError("HiddenLayer.backward() llamado antes de forward()")
         if self.mask is not None:
             dout = dout * self.mask
         self.dW = self.x.T @ dout

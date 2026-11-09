@@ -140,7 +140,7 @@ def cnn_architecture_rows(
       W_out = floor((W_in + 2*P - K) / S) + 1
       Conv_total = H_out * W_out * Filtros
       Pool_total = HP_out * WP_out * Filtros
-      FC_total = (H_out_dense * In_units) + H_out_dense
+      hidden_params = (unidades_entrada × neuronas_ocultas) + neuronas_ocultas
     """
     blocks = max(1, min(3, int(num_blocks)))
     size = max(8, int(input_size))
@@ -289,47 +289,69 @@ def cnn_architecture_rows(
     ))
     prev_out_repr = flat_out_repr
 
-    # 4. Capa Totalmente Conectada (Densa / FC)
-    fc_params = hid * flat_tot + hid
-    fc_out_repr = f"{hid} neuronas  ({hid})"
+    # 4. Capa oculta de backpropagation (x·W + b → ReLU)
+    hidden_params = hid * flat_tot + hid
+    hidden_out_repr = f"{hid} neuronas  ({hid})"
     rows.append(ArchRow(
-        stage="Densa 1",
-        capa="Densa (FC)",
-        operation=f"Capa Densa Oculta ({hid} neuronas con ReLU)",
+        stage="Oculta 1",
+        capa="Oculta",
+        operation=f"Capa oculta ({hid} neuronas, z = x·W + b → ReLU)",
         input_shape=(flat_tot,),
         output_shape=(hid,),
         elements=hid,
-        params=fc_params,
-        flops=fc_params,
+        params=hidden_params,
+        flops=hidden_params,
         entrada_excel=prev_out_repr,
-        salida_excel=fc_out_repr,
-        total_parametros=fc_params,
+        salida_excel=hidden_out_repr,
+        total_parametros=hidden_params,
         is_blue=False,
-        formula=f"({flat_tot} × {hid}) + {hid} = {fmt_int(fc_params)} parámetros",
+        formula=f"({flat_tot} × {hid}) + {hid} = {fmt_int(hidden_params)} parámetros",
         formula_excel=f"=({hid}*{flat_tot})+{hid}",
-        note=f"{hid} neuronas densas combinando patrones de peces.",
+        note=f"{hid} neuronas ocultas que combinan los patrones de los mapas convolucionales.",
         color="#fbbf24",
     ))
-    prev_out_repr = fc_out_repr
+    prev_out_repr = hidden_out_repr
 
-    # 5. Capa de Salida Softmax (Clasificación de los 3 peces)
+    # 5. Capa de salida (proyección a los logits de las tres clases)
     sm_params = n_out * hid + n_out
-    sm_out_repr = f"{n_out} clases (Trucha, Mojarra, Pavón)"
+    logits_out_repr = f"{n_out} logits  ({n_out})"
     rows.append(ArchRow(
-        stage="Softmax",
-        capa="Softmax",
-        operation="Capa de Salida con Probabilidades Softmax",
+        stage="Salida",
+        capa="Salida",
+        operation="Capa de salida (proyección lineal a los logits)",
         input_shape=(hid,),
         output_shape=(n_out,),
         elements=n_out,
         params=sm_params,
         flops=sm_params,
         entrada_excel=prev_out_repr,
-        salida_excel=sm_out_repr,
+        salida_excel=logits_out_repr,
         total_parametros=sm_params,
         is_blue=False,
         formula=f"({hid} × {n_out}) + {n_out} = {fmt_int(sm_params)} parámetros",
         formula_excel=f"=({n_out}*{hid})+{n_out}",
+        note="Convierte las activaciones ocultas en una puntuación por clase.",
+        color="#34d399",
+    ))
+    prev_out_repr = logits_out_repr
+
+    # 6. Softmax: convierte los logits en probabilidades
+    sm_out_repr = f"{n_out} clases (Trucha, Mojarra, Pavón)"
+    rows.append(ArchRow(
+        stage="Softmax",
+        capa="Softmax",
+        operation="Softmax: normaliza los logits en probabilidades",
+        input_shape=(n_out,),
+        output_shape=(n_out,),
+        elements=n_out,
+        params=0,
+        flops=n_out,
+        entrada_excel=prev_out_repr,
+        salida_excel=sm_out_repr,
+        total_parametros=0,
+        is_blue=False,
+        formula="pᵢ = exp(zᵢ − max z) / Σ exp(zⱼ − max z)",
+        formula_excel="=SUMA(EXP(z-max))/...",
         note="Distribución de probabilidad entre Trucha, Mojarra y Pavón.",
         color="#34d399",
     ))
@@ -379,160 +401,307 @@ def totals(rows: list[ArchRow]) -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# Laboratorio numérico: convolución y pooling paso a paso
+# Laboratorio numérico: pasos reales de la CNN
 # ---------------------------------------------------------------------------
-def as_matrix(values: Any, rows: int, cols: int) -> np.ndarray:
+@dataclass
+class LabStep:
+    """Un fotograma del recorrido numérico de una capa real de la CNN."""
+
+    index: int
+    title: str
+    detail: str
+    formula: str
+    source: np.ndarray
+    source_highlight: tuple[int, int, int, int] | None
+    source_label: str
+    kernel: np.ndarray | None
+    kernel_label: str
+    target: np.ndarray
+    target_highlight: tuple[int, int, int, int] | None
+    target_label: str
+    phase: str = ""
+
+
+def _as_2d(values: Any) -> np.ndarray:
     arr = np.asarray(values, dtype=np.float32)
+    if arr.ndim == 3:
+        arr = arr[0]
+    if arr.ndim == 1:
+        side = int(np.ceil(np.sqrt(arr.size)))
+        padded = np.zeros(side * side, dtype=np.float32)
+        padded[: arr.size] = arr
+        arr = padded.reshape(side, side)
     if arr.ndim != 2:
-        arr = arr.reshape(rows, cols)
-    if arr.shape != (rows, cols):
-        fixed = np.zeros((rows, cols), np.float32)
-        r = min(rows, arr.shape[0])
-        c = min(cols, arr.shape[1])
-        fixed[:r, :c] = arr[:r, :c]
-        return fixed
+        raise ValueError(f"Se esperaba una matriz 2D; se recibió {arr.shape}")
     return arr
 
 
-def conv_demo(
-    matrix: Any,
+def conv1_frames(
+    input_2d: Any,
     kernel: Any,
-    padding: int = 0,
-    stride: int = 1,
-) -> dict[str, Any]:
-    """Convolución 2D con padding/stride, devolviendo también las ventanas."""
-    x = np.asarray(matrix, dtype=np.float32)
+    bias: float,
+    crop: int = 8,
+) -> list[LabStep]:
+    """Convolución real de un filtro aprendido sobre un recorte de la entrada.
+
+    El recorte central se elige de forma que cada ventana 3×3 esté completa
+    dentro de la imagen. Así, el mapa calculado coincide exactamente con la
+    activación que produce la capa Conv 1 del modelo sobre esa región.
+    """
+    image = _as_2d(input_2d)
     k = np.asarray(kernel, dtype=np.float32)
     if k.shape != (3, 3):
         k = np.resize(k, (3, 3)).astype(np.float32)
-    p = max(0, int(padding))
-    s = max(1, int(stride))
-    xp = np.pad(x, ((p, p), (p, p)), mode="constant") if p else x
-    h, w = xp.shape
-    if h < 3 or w < 3:
-        return {"output": np.zeros((1, 1), np.float32), "padded": xp, "starts": [(0, 0)], "shape": (1, 1)}
-    hout = (h - 3) // s + 1
-    wout = (w - 3) // s + 1
-    out = np.zeros((hout, wout), np.float32)
-    starts: list[tuple[int, int]] = []
-    for i in range(hout):
-        for j in range(wout):
-            y, xx = i * s, j * s
-            out[i, j] = float(np.sum(xp[y:y + 3, xx:xx + 3] * k))
-            starts.append((y, xx))
-    return {"output": out, "padded": xp, "starts": starts, "shape": (hout, wout)}
+    h, w = image.shape
+    side = max(2, min(int(crop), h - 2, w - 2))
+    i0 = max(1, (h - side) // 2)
+    j0 = max(1, (w - side) // 2)
+    i0 = min(i0, h - side - 1)
+    j0 = min(j0, w - side - 1)
+    source = image[i0 - 1: i0 + side + 1, j0 - 1: j0 + side + 1]
+    raw = np.zeros((side, side), dtype=np.float32)
+    frames: list[LabStep] = []
+    bias = float(bias)
+    total = side * side
+    for a in range(side):
+        for b in range(side):
+            window = source[a:a + 3, b:b + 3]
+            products = window * k
+            z = float(products.sum()) + bias
+            raw[a, b] = z
+            terms = " + ".join(
+                f"({window[u, v]:.2f}·{k[u, v]:+.2f})" for u in range(3) for v in range(3)
+            )
+            frames.append(LabStep(
+                index=len(frames),
+                phase="conv",
+                title=f"Conv 1 · celda {a * side + b + 1}/{total}",
+                detail=(
+                    f"La ventana 3×3 se coloca en la fila {i0 + a}, columna {j0 + b} de la "
+                    f"imagen de {h}×{w} ya preprocesada. Se multiplica por el filtro aprendido, "
+                    f"se suman los 9 productos y se añade el sesgo b = {bias:+.4f}. "
+                    f"El resultado alimenta la posición ({a}, {b}) del mapa."
+                ),
+                formula=f"{terms} + b = {z:+.4f}",
+                source=source.copy(),
+                source_highlight=(a, b, 3, 3),
+                source_label=f"Entrada real · ventana {source.shape[0]}×{source.shape[1]}",
+                kernel=k.copy(),
+                kernel_label="Filtro aprendido 3×3",
+                target=raw.copy(),
+                target_highlight=(a, b, 1, 1),
+                target_label=f"Mapa Conv 1 · {side}×{side}",
+            ))
+    activated = np.maximum(0.0, raw)
+    negatives = int((raw < 0).sum())
+    frames.append(LabStep(
+        index=len(frames),
+        phase="relu",
+        title="ReLU sobre el mapa convolucional",
+        detail=(
+            f"Se aplica max(0, z) a las {raw.size} celdas del mapa. "
+            f"{negatives} valores negativos pasan a 0 y los positivos se conservan. "
+            f"Este mapa activado es el que entra al Max Pooling de la red."
+        ),
+        formula="a = max(0, z)",
+        source=raw.copy(),
+        source_highlight=None,
+        source_label="Mapa Conv 1 (z)",
+        kernel=None,
+        kernel_label="",
+        target=activated.copy(),
+        target_highlight=None,
+        target_label="Mapa activado (ReLU)",
+    ))
+    return frames
 
 
-def conv_step_detail(
-    matrix: Any,
-    kernel: Any,
-    padding: int = 0,
-    stride: int = 1,
-    row: int = 0,
-    col: int = 0,
-) -> dict[str, Any]:
-    """Detalle de una celda: ventana, productos, suma y posición."""
-    x = np.asarray(matrix, dtype=np.float32)
-    k = np.asarray(kernel, dtype=np.float32)
-    p = max(0, int(padding))
-    s = max(1, int(stride))
-    xp = np.pad(x, ((p, p), (p, p)), mode="constant") if p else x
-    y, xx = int(row) * s, int(col) * s
-    window = xp[y:y + 3, xx:xx + 3]
-    if window.shape != (3, 3):
-        window = np.zeros((3, 3), np.float32)
-    products = window * k
-    return {
-        "row": int(row),
-        "col": int(col),
-        "origin": (y, xx),
-        "window": window,
-        "kernel": k,
-        "products": products,
-        "sum": float(products.sum()),
-        "formula": " + ".join(
-            f"({window[i, j]:g}·{k[i, j]:g})" for i in range(3) for j in range(3)
-        ) + f" = {products.sum():g}",
-    }
+def hidden_frames(
+    flat_input: Any,
+    weights: Any,
+    bias: float,
+    neuron: int,
+    top_k: int = 64,
+) -> list[LabStep]:
+    """Producto punto de una neurona oculta con sus entradas reales.
+
+    La capa oculta recibe el vector aplanado y calcula z = Σ x·w + b. Para poder
+    leer los números se muestran las ``top_k`` entradas con mayor contribución
+    absoluta; el resto se resume en un término de "resto".
+    """
+    x = np.asarray(flat_input, dtype=np.float32).ravel()
+    w = np.asarray(weights, dtype=np.float32).ravel()
+    if x.size != w.size:
+        raise ValueError(f"Entradas ({x.size}) y pesos ({w.size}) no coinciden")
+    n = x.size
+    k = max(1, min(int(top_k), n))
+    side = int(np.ceil(np.sqrt(k)))
+    contributions = x * w
+    order = np.argsort(-np.abs(contributions))[:k]
+    src = np.zeros(side * side, dtype=np.float32)
+    wet = np.zeros(side * side, dtype=np.float32)
+    prod = np.zeros(side * side, dtype=np.float32)
+    src[:k] = x[order]
+    wet[:k] = w[order]
+    prod[:k] = contributions[order]
+    src = src.reshape(side, side)
+    wet = wet.reshape(side, side)
+    prod = prod.reshape(side, side)
+    top_sum = float(prod.sum())
+    total_sum = float(contributions.sum())
+    residual = total_sum - top_sum
+    z = total_sum + float(bias)
+    activation = max(0.0, z)
+    frames = [
+        LabStep(
+            index=0,
+            phase="products",
+            title=f"Capa oculta · neurona {neuron + 1} · productos x·w",
+            detail=(
+                f"La neurona {neuron + 1} recibe {n} activaciones del vector aplanado. "
+                f"Se muestran las {k} entradas con mayor |x·w|. Cada celda es el producto "
+                f"de una entrada por su peso; los pesos pertenecen al modelo cargado."
+            ),
+            formula=f"x·w → {k} productos (el resto se suma aparte)",
+            source=src,
+            source_highlight=None,
+            source_label=f"Entradas x · {k} de {n}",
+            kernel=wet,
+            kernel_label=f"Pesos w de la neurona {neuron + 1}",
+            target=prod,
+            target_highlight=None,
+            target_label="Productos x·w",
+        ),
+        LabStep(
+            index=1,
+            phase="sum",
+            title="Suma de productos + sesgo → z",
+            detail=(
+                f"Σ de las {k} entradas mostradas = {top_sum:+.4f}. "
+                f"Resto de las {n - k} entradas = {residual:+.4f}. "
+                f"Sesgo b = {float(bias):+.4f}. Por tanto, z = {z:+.4f}. "
+                f"Este z es la salida lineal de la neurona antes de la activación."
+            ),
+            formula=f"Σ_top ({top_sum:+.4f}) + resto ({residual:+.4f}) + b ({float(bias):+.4f}) = {z:+.4f}",
+            source=prod,
+            source_highlight=None,
+            source_label="Productos x·w",
+            kernel=None,
+            kernel_label="",
+            target=np.array([[z]], dtype=np.float32),
+            target_highlight=None,
+            target_label="z de la neurona",
+        ),
+        LabStep(
+            index=2,
+            phase="relu",
+            title="ReLU → activación de la neurona",
+            detail=(
+                f"La capa oculta aplica max(0, z). Con z = {z:+.4f}, la activación final "
+                f"de la neurona es {activation:+.4f}. Esta activación viaja a la capa de salida."
+            ),
+            formula=f"a = max(0, {z:+.4f}) = {activation:+.4f}",
+            source=np.array([[z]], dtype=np.float32),
+            source_highlight=None,
+            source_label="z (salida lineal)",
+            kernel=None,
+            kernel_label="",
+            target=np.array([[activation]], dtype=np.float32),
+            target_highlight=None,
+            target_label="Activación ReLU",
+        ),
+    ]
+    return frames
 
 
-def pool_demo(
-    matrix: Any,
-    mode: str = "max",
-    size: int = 2,
-    stride: int = 2,
-) -> dict[str, Any]:
-    x = np.asarray(matrix, dtype=np.float32)
-    k = max(1, int(size))
-    s = max(1, int(stride))
-    h, w = x.shape
-    if h < k or w < k:
-        return {"output": x.copy(), "starts": [(0, 0)], "shape": x.shape}
-    hout = (h - k) // s + 1
-    wout = (w - k) // s + 1
-    out = np.zeros((hout, wout), np.float32)
-    starts: list[tuple[int, int]] = []
-    for i in range(hout):
-        for j in range(wout):
-            y, xx = i * s, j * s
-            win = x[y:y + k, xx:xx + k]
-            out[i, j] = float(win.max() if mode == "max" else win.mean())
-            starts.append((y, xx))
-    return {"output": out, "starts": starts, "shape": (hout, wout)}
+def softmax_frames(
+    logits: Any,
+    labels: list[str] | tuple[str, ...],
+    true_label: int | None = None,
+) -> list[LabStep]:
+    """Paso a paso real de la capa de salida Softmax."""
+    z = np.asarray(logits, dtype=np.float32).ravel()
+    if z.size < 2:
+        raise ValueError("Softmax necesita al menos dos clases")
+    names = [str(v) for v in labels][: z.size]
+    if len(names) < z.size:
+        names += [f"Clase {i + 1}" for i in range(len(names), z.size)]
+    shifted = z - float(z.max())
+    exp = np.exp(shifted)
+    total = float(exp.sum())
+    probs = exp / max(total, 1e-12)
 
-
-def pool_step_detail(
-    matrix: Any,
-    mode: str = "max",
-    size: int = 2,
-    stride: int = 2,
-    row: int = 0,
-    col: int = 0,
-) -> dict[str, Any]:
-    x = np.asarray(matrix, dtype=np.float32)
-    k = max(1, int(size))
-    s = max(1, int(stride))
-    y, xx = int(row) * s, int(col) * s
-    win = x[y:y + k, xx:xx + k]
-    value = float(win.max() if mode == "max" else win.mean())
-    op = "max" if mode == "max" else "media"
-    values = ", ".join(f"{v:g}" for v in win.ravel())
-    return {
-        "row": int(row), "col": int(col), "window": win, "value": value,
-        "formula": f"{op}({values}) = {value:g}",
-    }
-
-
-def sample_matrix(size: int = 10, seed: int = 7) -> np.ndarray:
-    """Matriz de ejemplo con valores enteros de 0 a 255."""
-    rng = np.random.default_rng(seed)
-    base = np.linspace(0, 255, size, dtype=np.float32)
-    grid = np.add.outer(base, base[::-1]) / 2.0
-    noise = rng.normal(0, 18, (size, size))
-    return np.clip(grid + noise, 0, 255).round().astype(np.float32)
-
-
-def matrix_from_patch(image: np.ndarray, size: int = 10) -> np.ndarray:
-    """Extrae un parche central de una imagen y lo reescala a ``size``×``size``."""
-    arr = np.asarray(image, dtype=np.float32)
-    if arr.ndim == 3:
-        arr = arr.mean(axis=2)
-    h, w = arr.shape[:2]
-    side = max(1, min(h, w, size * 4))
-    y0 = max(0, (h - side) // 2)
-    x0 = max(0, (w - side) // 2)
-    patch = arr[y0:y0 + side, x0:x0 + side]
-    if patch.size == 0:
-        return np.zeros((size, size), np.float32)
-    # Rejilla por bloques para conservar el aspecto de píxeles.
-    ys = np.linspace(0, patch.shape[0], size + 1).astype(int)
-    xs = np.linspace(0, patch.shape[1], size + 1).astype(int)
-    out = np.zeros((size, size), np.float32)
-    for i in range(size):
-        for j in range(size):
-            block = patch[ys[i]:max(ys[i] + 1, ys[i + 1]), xs[j]:max(xs[j] + 1, xs[j + 1])]
-            out[i, j] = float(block.mean()) if block.size else 0.0
-    return np.clip(out, 0, 255).round()
+    z_row = z.reshape(1, -1)
+    e_row = exp.reshape(1, -1)
+    p_row = probs.reshape(1, -1)
+    detail_values = ", ".join(
+        f"{names[i]} z={z[i]:+.4f} → e={exp[i]:.4f} → p={probs[i]:.4f}"
+        for i in range(z.size)
+    )
+    predicted = int(np.argmax(probs))
+    frames = [
+        LabStep(
+            index=0,
+            phase="exp",
+            title="Salida · logits → exponenciales",
+            detail=(
+                f"La capa de salida produce los logits {np.array2string(z, precision=4)}. "
+                f"Se resta el máximo ({float(z.max()):+.4f}) para evitar desbordamientos y "
+                f"se aplica exp. {detail_values}."
+            ),
+            formula=f"eᵢ = exp(zᵢ − max z) = {np.array2string(exp, precision=4)}",
+            source=z_row.copy(),
+            source_highlight=None,
+            source_label="Logits z (capa de salida)",
+            kernel=None,
+            kernel_label="",
+            target=e_row.copy(),
+            target_highlight=None,
+            target_label="Exponenciales",
+        ),
+        LabStep(
+            index=1,
+            phase="normalize",
+            title="Normalización de probabilidades",
+            detail=(
+                f"La suma de exponenciales es {total:.4f}. Al dividir cada una entre la suma, "
+                f"se obtiene una distribución que suma 1. La clase predicha es "
+                f"«{names[predicted]}» con {probs[predicted] * 100:.2f} % de confianza."
+            ),
+            formula="pᵢ = eᵢ / Σe = " + np.array2string(probs, precision=4),
+            source=e_row.copy(),
+            source_highlight=None,
+            source_label="Exponenciales",
+            kernel=None,
+            kernel_label="",
+            target=p_row.copy(),
+            target_highlight=(0, predicted, 1, 1),
+            target_label="Probabilidades Softmax",
+        ),
+        LabStep(
+            index=2,
+            phase="done",
+            title="Predicción final de la red",
+            detail=(
+                f"La red asigna {', '.join(f'{names[i]} {probs[i] * 100:.2f}%' for i in range(z.size))}. "
+                + (
+                    f"La etiqueta real de la imagen es «{names[true_label]}»."
+                    if true_label is not None and 0 <= int(true_label) < z.size
+                    else "No hay etiqueta real disponible para esta muestra."
+                )
+            ),
+            formula=f"argmax(p) = {predicted} → «{names[predicted]}» ({probs[predicted] * 100:.2f} %)",
+            source=p_row.copy(),
+            source_highlight=None,
+            source_label="Probabilidades",
+            kernel=None,
+            kernel_label="",
+            target=p_row.copy(),
+            target_highlight=(0, predicted, 1, 1),
+            target_label="Clase predicha",
+        ),
+    ]
+    return frames
 
 
 # ---------------------------------------------------------------------------
@@ -542,7 +711,7 @@ MANUAL_ENGINE_CHECKS = (
     ("Lectura de imágenes", "OpenCV solo decodifica píxeles; no aprende nada."),
     ("Convolución", "core/image_ops.convolve2d: ventanas + producto punto en NumPy."),
     ("Forward CNN", "core/cnn.py: Conv2D, ReLU, MaxPool2D y Flatten propios."),
-    ("Backpropagation", "core/cnn.py: gradientes analíticos de conv, pooling y densas."),
+    ("Backpropagation", "core/cnn.py: gradientes analíticos de conv, pooling y capas ocultas."),
     ("Softmax", "core/nn.py: exp(z − max) / suma, escrito a mano."),
     ("Entropía cruzada", "core/nn.py: −log(p[y]) con pesos por clase opcionales."),
     ("Momentum", "core/nn.py: v ← μv − η∇L ; θ ← θ + v."),
@@ -571,217 +740,3 @@ def audit_imports(root: str | None = None) -> dict[str, Any]:
             if f"import {lib}" in text or f"from {lib}" in text:
                 hits.append(f"{path.name}: {lib}")
     return {"files": files, "hits": hits, "ok": not hits}
-
-
-# ---------------------------------------------------------------------------
-# Recorrido paso a paso: kernel por kernel, celda por celda, hasta el pooling
-# ---------------------------------------------------------------------------
-@dataclass
-class LabStep:
-    """Un fotograma del recorrido numérico de convolución + ReLU + pooling."""
-
-    index: int
-    phase: str                 # conv | relu | pool | done
-    title: str
-    detail: str
-    source: np.ndarray
-    source_highlight: tuple[int, int, int, int] | None
-    kernel: np.ndarray | None
-    products: np.ndarray | None
-    target: np.ndarray
-    target_highlight: tuple[int, int, int, int] | None
-    formula: str
-    value: float | None
-    kernel_index: int
-    kernel_total: int
-    cell_index: int
-    cell_total: int
-    source_label: str = ""
-    target_label: str = ""
-
-
-def _prepare_kernel(kernel: Any) -> np.ndarray:
-    k = np.asarray(kernel, dtype=np.float32)
-    if k.shape != (3, 3):
-        k = np.resize(k, (3, 3)).astype(np.float32)
-    return k
-
-
-def build_lab_steps(
-    matrix: Any,
-    kernels: list[Any] | tuple[Any, ...] | None = None,
-    padding: int = 0,
-    stride: int = 1,
-    relu: bool = True,
-    pool_mode: str = "max",
-    pool_size: int = 2,
-    pool_stride: int = 2,
-) -> list[LabStep]:
-    """Genera todos los pasos del laboratorio, en orden.
-
-    Fase 1: cada kernel recorre la imagen celda por celda (ventana × kernel).
-    Fase 2: ReLU sobre cada mapa de características.
-    Fase 3: pooling celda por celda sobre cada mapa.
-    Fase 4: resultado final con las matrices transformadas.
-    """
-    x = np.asarray(matrix, dtype=np.float32)
-    if x.ndim != 2:
-        x = x.reshape(x.shape[-2], x.shape[-1]) if x.ndim > 2 else x.reshape(1, -1)
-    if kernels is None:
-        kernels = [[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]]
-    ks = [_prepare_kernel(k) for k in kernels] or [_prepare_kernel([[0]])]
-    p = max(0, int(padding))
-    s = max(1, int(stride))
-    xp = np.pad(x, ((p, p), (p, p)), mode="constant") if p else x
-    h, w = xp.shape
-    hout = max(1, (h - 3) // s + 1)
-    wout = max(1, (w - 3) // s + 1)
-    cells = hout * wout
-    ktotal = len(ks)
-    steps: list[LabStep] = []
-    raw_maps: list[np.ndarray] = []
-
-    for ki, k in enumerate(ks):
-        out = np.zeros((hout, wout), np.float32)
-        for i in range(hout):
-            for j in range(wout):
-                y, xx = i * s, j * s
-                window = xp[y:y + 3, xx:xx + 3]
-                if window.shape != (3, 3):
-                    window = np.zeros((3, 3), np.float32)
-                products = window * k
-                value = float(products.sum())
-                out[i, j] = value
-                steps.append(LabStep(
-                    index=len(steps),
-                    phase="conv",
-                    title=f"Kernel {ki + 1}/{ktotal} · celda {i * wout + j + 1}/{cells}",
-                    detail=(
-                        f"La ventana 3×3 se coloca en la fila {y}, columna {xx} de la entrada "
-                        f"{'(con padding)' if p else ''}. Se multiplica elemento a elemento por el "
-                        f"kernel y se suman los 9 productos."
-                    ),
-                    source=xp.copy(),
-                    source_highlight=(y, xx, 3, 3),
-                    kernel=k.copy(),
-                    products=products.copy(),
-                    target=out.copy(),
-                    target_highlight=(i, j, 1, 1),
-                    formula=(
-                        " + ".join(
-                            f"({window[a, b]:g}·{k[a, b]:g})" for a in range(3) for b in range(3)
-                        )
-                        + f" = {value:g}"
-                    ),
-                    value=value,
-                    kernel_index=ki,
-                    kernel_total=ktotal,
-                    cell_index=i * wout + j,
-                    cell_total=cells,
-                    source_label=f"Entrada {h}×{w}" + (" (padding)" if p else ""),
-                    target_label=f"Mapa del kernel {ki + 1}",
-                ))
-        raw_maps.append(out)
-
-    activated: list[np.ndarray] = []
-    if relu:
-        for ki, raw in enumerate(raw_maps):
-            act = np.maximum(0.0, raw)
-            negatives = int((raw < 0).sum())
-            steps.append(LabStep(
-                index=len(steps),
-                phase="relu",
-                title=f"ReLU · mapa {ki + 1}/{ktotal}",
-                detail=(
-                    f"Se aplica max(0, x) a las {raw.size} celdas del mapa. "
-                    f"{negatives} valores negativos se convierten en 0; los positivos no cambian."
-                ),
-                source=raw.copy(),
-                source_highlight=None,
-                kernel=None,
-                products=None,
-                target=act.copy(),
-                target_highlight=None,
-                formula="y = max(0, x)",
-                value=float(act.max()) if act.size else None,
-                kernel_index=ki,
-                kernel_total=ktotal,
-                cell_index=0,
-                cell_total=int(raw.size),
-                source_label=f"Convolución {ki + 1}",
-                target_label=f"ReLU {ki + 1}",
-            ))
-            activated.append(act)
-    else:
-        activated = [m.copy() for m in raw_maps]
-
-    pooled_maps: list[np.ndarray] = []
-    size = max(1, int(pool_size))
-    ps = max(1, int(pool_stride))
-    for ki, act in enumerate(activated):
-        ah, aw = act.shape
-        ph = max(1, (ah - size) // ps + 1) if ah >= size else ah
-        pw = max(1, (aw - size) // ps + 1) if aw >= size else aw
-        pooled = np.zeros((ph, pw), np.float32)
-        total = ph * pw
-        op = "max" if pool_mode == "max" else "media"
-        for i in range(ph):
-            for j in range(pw):
-                y, xx = i * ps, j * ps
-                win = act[y:y + size, xx:xx + size]
-                if win.size == 0:
-                    win = np.zeros((size, size), np.float32)
-                value = float(win.max() if pool_mode == "max" else win.mean())
-                pooled[i, j] = value
-                vals = ", ".join(f"{v:g}" for v in win.ravel())
-                steps.append(LabStep(
-                    index=len(steps),
-                    phase="pool",
-                    title=f"Pooling · mapa {ki + 1}/{ktotal} · celda {i * pw + j + 1}/{total}",
-                    detail=(
-                        f"Ventana {size}×{size} en la fila {y}, columna {xx}. "
-                        f"Se resume en un solo valor con la operación {op}."
-                    ),
-                    source=act.copy(),
-                    source_highlight=(y, xx, size, size),
-                    kernel=None,
-                    products=None,
-                    target=pooled.copy(),
-                    target_highlight=(i, j, 1, 1),
-                    formula=f"{op}({vals}) = {value:g}",
-                    value=value,
-                    kernel_index=ki,
-                    kernel_total=ktotal,
-                    cell_index=i * pw + j,
-                    cell_total=total,
-                    source_label=f"ReLU {ki + 1}",
-                    target_label=f"Pooling {ki + 1}",
-                ))
-        pooled_maps.append(pooled)
-
-    shapes = " · ".join(f"{m.shape[0]}×{m.shape[1]}" for m in pooled_maps)
-    steps.append(LabStep(
-        index=len(steps),
-        phase="done",
-        title="Resultado final del recorrido",
-        detail=(
-            f"{ktotal} kernel(s) aplicados sobre una entrada de {x.shape[0]}×{x.shape[1]}. "
-            f"Cada kernel produjo su propio mapa; ReLU y pooling se aplicaron por separado. "
-            f"Mapas finales: {shapes}. Esos mapas se aplanan y entran a la red densa."
-        ),
-        source=pooled_maps[0].copy() if pooled_maps else np.zeros((1, 1), np.float32),
-        source_highlight=None,
-        kernel=None,
-        products=None,
-        target=pooled_maps[-1].copy() if pooled_maps else np.zeros((1, 1), np.float32),
-        target_highlight=None,
-        formula=f"entrada {x.shape[0]}×{x.shape[1]} → {ktotal} mapa(s) {shapes}",
-        value=None,
-        kernel_index=ktotal - 1,
-        kernel_total=ktotal,
-        cell_index=0,
-        cell_total=1,
-        source_label="Mapa final 1",
-        target_label=f"Mapa final {ktotal}",
-    ))
-    return steps

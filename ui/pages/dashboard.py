@@ -336,7 +336,7 @@ class DashboardPage(QWidget):
         art.setPixmap(icons.logo_pixmap(150, 1.0))
         art.setStyleSheet("background: transparent;")
         art.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        art.setToolTip("AquaCNN: clasificación de peces con convolución, ReLU, pooling y red densa.")
+        art.setToolTip("AquaCNN: clasificación de peces con convolución, ReLU, pooling y una capa oculta.")
         hero_l.addWidget(art, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(hero)
 

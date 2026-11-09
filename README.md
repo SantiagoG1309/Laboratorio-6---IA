@@ -138,17 +138,21 @@ Puedes buscar imágenes, filtrar por clase y ampliar cualquier etapa a pantalla 
   vivo con los hiperparámetros de Entrenamiento.
 - **Tabla viva** calculada desde el modelo real: etapa, operación, forma de entrada, kernel,
   stride, padding, filtros, forma de salida, elementos, parámetros, FLOPS y fórmula de la **CNN convolucional**.
-- **Laboratorio numérico**: matrices 10×10 editables, kernel 3×3, padding/stride y pooling
-  max/media. Al hacer clic en una celda de salida se resaltan la ventana, los 9 productos y la suma.
-- **Recorrido paso a paso**: reproduce la convolución celda por celda, kernel por kernel, seguida
-  de ReLU y pooling, con controles de inicio, anterior, reproducir, siguiente y final.
+- **Laboratorio numérico con pesos reales**: elige **Conv 1**, **Capa oculta** o **Salida Softmax**
+  y recorre el cálculo de un filtro, una neurona o las tres probabilidades usando los pesos
+  aprendidos del modelo cargado y una muestra real del dataset ya preprocesada.
+- **Recorrido paso a paso**: muestra la ventana, los productos, la suma del sesgo, ReLU, los logits
+  y la normalización Softmax, con controles de inicio, anterior, reproducir, siguiente y final.
 - **Auditoría manual**: lista de comprobaciones del motor NumPy y verificación de gradientes por
   diferencias finitas contra el backpropagation implementado.
 
 ### Entrenamiento
-- Clasificador **CNN** (Conv → ReLU → MaxPool → Conv → ReLU → MaxPool → Flatten → Dense → Softmax).
+- Clasificador **CNN** (Conv → ReLU → MaxPool → Conv → ReLU → MaxPool → Flatten → Capa oculta → Softmax).
 - Hiperparámetros: épocas, batch, learning rate, momentum, weight decay, semilla, tamaño de entrada,
   neuronas ocultas, filtros por capa.
+- Botón **Aplicar configuración recomendada** con el preset que mejor equilibró las tres clases:
+  48×48, filtros 6/12, 64 ocultas, 80 épocas, lr 0.01, weight decay 1e-4, CLAHE, ROI, aumento y
+  pesos por clase.
 - Data augmentation, pesos por clase y recorte ROI opcionales.
 - Gráficas en vivo de **pérdida** y **exactitud** (train/validación), chips de métricas, ETA,
   barra de progreso y registro detallado.
@@ -165,7 +169,7 @@ Puedes buscar imágenes, filtrar por clase y ampliar cualquier etapa a pantalla 
 - Exactitud, F1 macro, precisión y recall macro, mejor exactitud de validación.
 - **Matriz de confusión** del conjunto de prueba y tabla de métricas por clase.
 - Galería de predicciones con filtros *Todas / Aciertos / Errores* y nivel de confianza.
-- **Inspector de pesos y gradientes**: elige cualquier tensor (Conv/Densa, W/b) y observa su mapa
+- **Inspector de pesos y gradientes**: elige cualquier tensor (Conv/Oculta, W/b) y observa su mapa
   de calor, estadísticas (forma, mínimo, máximo, media, desviación, norma L2, porcentaje de ceros)
   y el gradiente ∂L/∂θ calculado por backpropagation.
 - **Exportar reporte CSV** y **exportar el dataset procesado** por etapas.
@@ -260,9 +264,9 @@ Laboratorio6/
 │   ├── image_ops.py            lectura, color, ROI, resize, normalización, histogramas
 │   ├── pipeline.py             orquestación de etapas con caché
 │   ├── dataset.py              escaneo, división estratificada, importación
-│   ├── nn.py                   capas densas, Momentum, softmax, entropía cruzada
-│   ├── cnn.py                  Conv2D, ReLU, Max/Average Pooling, Flatten, Dense
-│   ├── architecture.py         formas, parámetros, FLOPS, laboratorio conv/pooling y auditoría
+│   ├── nn.py                   capas ocultas, Momentum, softmax, entropía cruzada
+│   ├── cnn.py                  Conv2D, ReLU, Max/Average Pooling, Flatten, capas ocultas
+│   ├── architecture.py         formas, parámetros, FLOPS, laboratorio numérico y auditoría
 │   ├── training.py             preparación de datos, aumento, entrenamiento, evaluación
 │   ├── metrics.py              exactitud, precisión, recall, F1, matriz de confusión
 │   ├── model_io.py             guardado/carga de modelos .npz
@@ -368,4 +372,4 @@ Qt 6 escala automáticamente. Si el texto se ve muy grande o muy pequeño, ajust
   (`Escudo_Universidad_de_Cundinamarca.png`), usada con fines académicos.
 - **Stack:** Python, PySide6/Qt 6, NumPy, OpenCV, Matplotlib, PyInstaller.
 
-Proyecto académico sin fines comerciales · **AquaCNN v1.1.0**.
+Proyecto académico sin fines comerciales · **AquaCNN v1.1.1**.

@@ -32,7 +32,6 @@ from core.config import (
     CLASS_LABELS,
     EQUALIZATIONS,
     KERNELS,
-    PIPELINE_STAGES,
     POOLINGS,
     PipelineConfig,
 )
@@ -51,7 +50,6 @@ from ui.theme import (
     TEXT,
     rgba,
 )
-from ui.glossary import GlossaryLabel
 from ui.widgets.cards import Badge, Card, Divider, ElidedLabel, SectionHeader, ToggleSwitch
 from ui.widgets.charts import HistogramCanvas
 from ui.widgets.flow_layout import ResponsiveGrid
@@ -192,40 +190,10 @@ class ControlsPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
 
-        # Etapas: interruptor maestro de cada paso del pipeline
-        self.stages_group = self._group("Etapas del pipeline", "layers")
+        # Los interruptores de cada etapa viven en su propia tarjeta del pipeline.
+        # Aquí solo se conserva el mapa ``key -> ToggleSwitch`` para config(),
+        # set_stage_enabled() y la sincronización con la tarjeta.
         self.stage_switches: dict[str, ToggleSwitch] = {}
-        for stage in PIPELINE_STAGES:
-            row = QWidget()
-            rl = QHBoxLayout(row)
-            rl.setContentsMargins(0, 0, 0, 0)
-            rl.setSpacing(7)
-            ic = QLabel()
-            ic.setPixmap(icons.pixmap(stage.get("icon", "layers"), MUTED, 13))
-            rl.addWidget(ic)
-            col = QVBoxLayout()
-            col.setSpacing(0)
-            name = GlossaryLabel(stage["label"])
-            name.setStyleSheet(f"font-size: 10.5px; font-weight: 600; color: {TEXT};")
-            col.addWidget(name)
-            short = GlossaryLabel(stage.get("short", ""))
-            short.setProperty("subtle", True)
-            short.setStyleSheet("font-size: 8.5px;")
-            col.addWidget(short)
-            rl.addLayout(col, 1)
-            sw = ToggleSwitch(bool(stage.get("always", False)))
-            sw.setFixedSize(38, 22)
-            sw.setEnabled(not stage.get("always", False))
-            sw.setToolTip(stage.get("description", ""))
-            row.setToolTip(stage.get("description", ""))
-            rl.addWidget(sw)
-            self.stage_switches[stage["key"]] = sw
-            self.stages_group.body().addWidget(row)
-        self.stages_group.body().addWidget(Divider())
-        self.stage_summary = QLabel("—")
-        self.stage_summary.setProperty("mono", True)
-        self.stage_summary.setWordWrap(True)
-        self.stages_group.body().addWidget(self.stage_summary)
 
         # Color
         self.color_group = self._group("Espacio de color", "layers")
@@ -351,7 +319,7 @@ class ControlsPanel(QWidget):
         self.pool_combo.setToolTip("Max: se queda con el máximo de cada ventana · Average: promedia la ventana.")
         self.pool_size.setToolTip("Tamaño de la ventana de pooling (2×2, 3×3 o 4×4).")
         self.pool_stride.setToolTip("Salto entre ventanas de pooling; si es igual al tamaño, no se solapan.")
-        self.flatten_toggle.setToolTip("Convierte los mapas 2D en un vector 1D para la capa densa.")
+        self.flatten_toggle.setToolTip("Convierte los mapas 2D en un vector 1D para la capa oculta.")
 
         # Acciones
         actions = Card(padding=12, spacing=8)
@@ -445,14 +413,8 @@ class ControlsPanel(QWidget):
         return w._switch  # type: ignore[attr-defined]
 
     def _bind_stage(self, key: str, widget: QWidget) -> None:
-        """Mantiene sincronizados el interruptor maestro y el del grupo."""
-        sw = self.stage_switches.get(key)
-        if sw is None:
-            return
-        target = self._switch(widget)
-        sw.toggled.connect(lambda on, t=target: self._sync_switch(t, on))
-        target.toggled.connect(lambda on, s=sw: self._sync_switch(s, on))
-        sw.toggled.connect(self._emit)
+        """Registra el interruptor propio de la tarjeta como fuente de verdad."""
+        self.stage_switches[key] = self._switch(widget)
 
     @staticmethod
     def _sync_switch(widget: ToggleSwitch, on: bool) -> None:
@@ -467,12 +429,7 @@ class ControlsPanel(QWidget):
     def set_stage_enabled(self, key: str, enabled: bool) -> None:
         sw = self.stage_switches.get(key)
         if sw is not None and sw.isChecked() != bool(enabled):
-            sw.setChecked(bool(enabled))
-
-    def _update_stage_summary(self) -> None:
-        active = [s["label"] for s in PIPELINE_STAGES if self.stage_switches[s["key"]].isChecked()]
-        total = len(PIPELINE_STAGES)
-        self.stage_summary.setText(f"{len(active)}/{total} etapas activas\n" + " → ".join(active))
+            self._sync_switch(sw, enabled)
 
     def _set_color(self, key: str) -> None:
         self.color_buttons[key].setChecked(True)
@@ -513,7 +470,6 @@ class ControlsPanel(QWidget):
         self.kernel_editor.valueChanged.connect(self._on_kernel_edited)
         self.recalc_btn.clicked.connect(self.recalc.emit)
         self.reset_btn.clicked.connect(self._reset)
-        self._update_stage_summary()
 
     def _on_kernel_changed(self) -> None:
         key = self.kernel_combo.currentData()
@@ -533,7 +489,6 @@ class ControlsPanel(QWidget):
         self._emit()
 
     def _emit(self) -> None:
-        self._update_stage_summary()
         if not self._loading:
             self.changed.emit()
 
@@ -584,7 +539,6 @@ class ControlsPanel(QWidget):
                 ("flatten", self.flatten_toggle),
             ):
                 enabled = cfg.stage_enabled(key)
-                self._sync_switch(self.stage_switches[key], enabled)
                 self._sync_switch(self._switch(widget), enabled)
             self.zoom_slider.setValue(int(cfg.roi_zoom * 100))
             self.x_slider.setValue(int(cfg.roi_x * 100))
@@ -610,7 +564,6 @@ class ControlsPanel(QWidget):
             self.pool_stride.setValue(cfg.pool_stride)
         finally:
             self._loading = False
-            self._update_stage_summary()
 
 
 class ExplorerPage(QWidget):

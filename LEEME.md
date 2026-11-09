@@ -31,9 +31,11 @@ Si esa carpeta no permite escritura (por ejemplo, `C:\Program Files`), usa
 - **Pipeline visual**: observa paso a paso cómo se procesa una imagen (color, ROI,
   escala de grises, CLAHE, convolución, pooling y entrada a la red).
 - **Arquitectura NN**: diagrama de la red, tablas de formas y parámetros, y un
-  laboratorio numérico interactivo.
+  laboratorio numérico que desglosa la convolución, una neurona oculta y el Softmax
+  con los pesos reales del modelo y una imagen del dataset.
 - **Entrenamiento**: ajusta épocas, batch, learning rate, filtros, etc. y pulsa
-  **Iniciar entrenamiento**. El progreso se ve en vivo.
+  **Iniciar entrenamiento**. El progreso se ve en vivo. El botón **Aplicar
+  configuración recomendada** carga el preset que mejor equilibró las tres clases.
 - **Resultados**: exactitud, matriz de confusión, métricas por clase, predicciones
   y exportación de reportes.
 - **Configuración**: temas, color de acento, tipografía y comportamiento.

@@ -137,7 +137,7 @@ class AboutPage(QWidget):
             ("4", "Análisis", "Histograma de 256 bins, ecualización global y CLAHE adaptativa.", WARNING),
             ("5", "Convolución", "Kernels 3×3 (vertical, horizontal, Sobel, Laplaciano, enfoque, relieve, personalizado) con padding y stride.", PURPLE),
             ("6", "Pooling + Flatten", "Max/Average pooling configurable y vectorización del mapa de características.", ACCENT),
-            ("7", "Clasificador CNN", "Red neuronal convolucional con backpropagation manual en NumPy puro: convolución 2D, max pooling, ReLU, capas densas, Momentum, softmax y entropía cruzada.", ACCENT_2),
+            ("7", "Clasificador CNN", "Red neuronal convolucional con backpropagation manual en NumPy puro: convolución 2D, max pooling, ReLU, capas ocultas, Momentum, softmax y entropía cruzada.", ACCENT_2),
         ]
         for num, title, desc, color in items:
             row = QHBoxLayout()

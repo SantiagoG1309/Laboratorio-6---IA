@@ -7,7 +7,7 @@ from typing import Any
 APP_NAME = "AquaCNN"
 APP_TITLE = "AquaCNN · Laboratorio 6"
 APP_SUBTITLE = "Tratamiento de imágenes para la clasificación de peces"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 UNIVERSITY = "Universidad de Cundinamarca"
 UNIVERSITY_CAMPUS = "Sede Facatativá"

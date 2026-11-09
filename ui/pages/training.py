@@ -100,11 +100,15 @@ class TrainingPage(QWidget):
         self.chip_test = Badge("Test 0", WARNING)
         for c in (self.chip_train, self.chip_val, self.chip_test):
             self.split_chips.addWidget(c)
+        self.chip_train.setToolTip("Imágenes usadas para ajustar los pesos de la red.")
+        self.chip_val.setToolTip("Imágenes reservadas para vigilar el sobreajuste en cada época.")
+        self.chip_test.setToolTip("Imágenes que la red nunca ve al entrenar; miden la generalización final.")
         self.split_chips.addStretch(1)
         data_card.body().addLayout(self.split_chips)
         self.data_info = QLabel("Sin dataset cargado")
         self.data_info.setProperty("subtle", True)
         self.data_info.setWordWrap(True)
+        self.data_info.setToolTip("Resumen del dataset escaneado y de la división estratificada por clase.")
         data_card.body().addWidget(self.data_info)
         cl.addWidget(data_card)
 
@@ -113,14 +117,18 @@ class TrainingPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(6)
         self.btn_cnn = Badge("Red Neuronal Convolucional (CNN)", ACCENT)
+        self.btn_cnn.setToolTip("Modelo fijo del laboratorio: CNN con convoluciones, pooling y capas ocultas.")
         row.addWidget(self.btn_cnn)
         row.addStretch(1)
         model_card.body().addLayout(row)
         self.arch_info = QLabel(
-            "Conv 3×3 → ReLU → MaxPool → Conv 3×3 → ReLU → MaxPool → Flatten → Dense → Softmax"
+            "Conv 3×3 → ReLU → MaxPool → Conv 3×3 → ReLU → MaxPool → Flatten → Capa oculta → Softmax"
         )
         self.arch_info.setProperty("subtle", True)
         self.arch_info.setWordWrap(True)
+        self.arch_info.setToolTip(
+            "Flujo de la red: dos bloques convolucionales, aplanado y una capa oculta con ReLU antes de las 3 clases."
+        )
         model_card.body().addWidget(self.arch_info)
         self.input_combo = QComboBox()
         for size in (32, 40, 48, 64):
@@ -144,7 +152,7 @@ class TrainingPage(QWidget):
         self.f2_spin.setRange(2, 64)
         self.f2_spin.setValue(12)
         self.hidden_spin.setToolTip(
-            "Neuronas de la capa densa oculta: cuántos patrones puede combinar la red antes de decidir la clase."
+            "Neuronas de la capa oculta: cuántos patrones puede combinar la red antes de decidir la clase."
         )
         self.f1_spin.setToolTip(
             "Filtros de la primera convolución: cada filtro aprende un patrón local distinto (bordes, texturas)."
@@ -246,6 +254,17 @@ class TrainingPage(QWidget):
         cl.addWidget(train_card)
 
         actions = Card(padding=14, spacing=8)
+        self.preset_btn = QPushButton("Aplicar configuración recomendada")
+        self.preset_btn.setProperty("variant", "ghost")
+        self.preset_btn.setIcon(icons.icon("check", MUTED, 15))
+        self.preset_btn.setToolTip(
+            "Ajusta 48×48, 6/12 filtros, 64 neuronas ocultas, 80 épocas, lr 0.01, "
+            "weight decay 1e-4, CLAHE, aumento y pesos por clase: la combinación que mejor "
+            "equilibró las tres clases en este laboratorio."
+        )
+        self.preset_btn.clicked.connect(self._apply_recommended)
+        actions.body().addWidget(self.preset_btn)
+
         self.start_btn = QPushButton("Iniciar entrenamiento")
         self.start_btn.setProperty("variant", "primary")
         self.start_btn.setIcon(icons.icon("play", ON_ACCENT, 17))
@@ -301,16 +320,24 @@ class TrainingPage(QWidget):
         self.chip_eta = MetricChip("ETA", "—", PURPLE)
         for c in (self.chip_epoch, self.chip_loss, self.chip_vloss, self.chip_acc, self.chip_vacc, self.chip_eta):
             chips.addWidget(c, 1)
+        self.chip_epoch.setToolTip("Época actual y total configurado.")
+        self.chip_loss.setToolTip("Pérdida de entrenamiento (entropía cruzada); debe bajar y estabilizarse.")
+        self.chip_vloss.setToolTip("Pérdida de validación; si sube mientras la de entrenamiento baja, hay sobreajuste.")
+        self.chip_acc.setToolTip("Exactitud sobre las imágenes de entrenamiento.")
+        self.chip_vacc.setToolTip("Exactitud sobre validación: la señal más útil para elegir la mejor época.")
+        self.chip_eta.setToolTip("Tiempo estimado restante para terminar el entrenamiento.")
         ml.addLayout(chips)
 
         chart_card = Card(padding=12, spacing=6)
         self.chart = TrainingChart()
         self.chart.setMinimumHeight(360)
+        self.chart.setToolTip("Evolución de pérdida y exactitud por época (entrenamiento vs validación).")
         chart_card.body().addWidget(self.chart)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
         self.progress.setFormat("Listo para entrenar")
+        self.progress.setToolTip("Progreso del entrenamiento; se detiene al terminar todas las épocas o al pulsar Detener.")
         chart_card.body().addWidget(self.progress)
         ml.addWidget(chart_card, 1)
 
@@ -319,11 +346,13 @@ class TrainingPage(QWidget):
         self.clear_log_btn = QPushButton("Limpiar")
         self.clear_log_btn.setProperty("variant", "ghost")
         self.clear_log_btn.setStyleSheet("padding: 4px 10px; font-size: 11px;")
+        self.clear_log_btn.setToolTip("Vacía el registro de texto sin afectar al modelo entrenado.")
         log_head.add_right(self.clear_log_btn)
         log_card.body().addWidget(log_head)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(170)
+        self.log.setToolTip("Registro detallado: época, pérdidas, exactitud, mejor modelo y avisos del entrenamiento.")
         self.log.setStyleSheet(
             "font-family: 'Cascadia Code','Consolas',monospace; font-size: 10.5px;"
             f"background: {BG_ALT}; border-radius: 9px;"
@@ -396,6 +425,8 @@ class TrainingPage(QWidget):
         lbl = GlossaryLabel(text)
         lbl.setProperty("muted", True)
         lbl.setStyleSheet("font-size: 10px;")
+        if widget.toolTip():
+            lbl.setToolTip(widget.toolTip())
         box.addWidget(lbl)
         box.addWidget(widget)
         return box
@@ -417,7 +448,7 @@ class TrainingPage(QWidget):
         self.f1_spin.setEnabled(True)
         self.f2_spin.setEnabled(True)
         self.arch_info.setText(
-            "Conv 3×3 → ReLU → MaxPool → Conv 3×3 → ReLU → MaxPool → Flatten → Dense → Softmax"
+            "Conv 3×3 → ReLU → MaxPool → Conv 3×3 → ReLU → MaxPool → Flatten → Capa oculta → Softmax"
         )
         self.configChanged.emit(self._config())
 
@@ -442,6 +473,36 @@ class TrainingPage(QWidget):
             train_ratio=self.main.training_cfg.train_ratio,
             val_ratio=self.main.training_cfg.val_ratio,
             test_ratio=self.main.training_cfg.test_ratio,
+        )
+
+    def _apply_recommended(self) -> None:
+        """Carga el preset que mejor equilibró trucha, mojarra y pavón."""
+        cfg = self._config()
+        cfg.input_size = 48
+        cfg.hidden_units = 64
+        cfg.conv_filters = 6
+        cfg.conv_filters2 = 12
+        cfg.epochs = 80
+        cfg.batch_size = 16
+        cfg.learning_rate = 0.01
+        cfg.momentum = 0.9
+        cfg.weight_decay = 1e-4
+        cfg.seed = 42
+        cfg.augmentation = True
+        cfg.class_weights = True
+        cfg.roi_crop = True
+        cfg.equalization = "clahe"
+        cfg.dropout = 0.25
+        cfg.label_smoothing = 0.05
+        self._apply_config(cfg)
+        self._emit_config()
+        self.status.setText(
+            "Configuración recomendada aplicada · 48×48 · 6/12 filtros · 64 ocultas · "
+            "80 épocas · lr 0.01 · CLAHE · ROI · aumento · pesos por clase."
+        )
+        self._log(
+            "Preset recomendado aplicado. Entrena y compara val accuracy antes de guardar; "
+            "si baja, vuelve a 30-60 épocas."
         )
 
     def set_loaded_model(self, meta: dict, name: str) -> None:

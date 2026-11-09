@@ -14,7 +14,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
 )
-from PySide6.QtWidgets import QToolTip, QWidget
+from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from core.config import CLASS_COLORS, CLASS_LABELS, CLASSES
 from ui import preferences
@@ -33,8 +33,10 @@ def _kind(stage: str) -> str:
         return "pool"
     if s.startswith("flatten"):
         return "flatten"
-    if s.startswith("densa") or s.startswith("fc"):
-        return "dense"
+    if s.startswith("oculta") or s.startswith("hidden"):
+        return "hidden"
+    if s.startswith("salida"):
+        return "output"
     if s.startswith("softmax"):
         return "softmax"
     return "other"
@@ -53,8 +55,9 @@ class NNDiagram(QWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setMinimumHeight(330)
-        self.setMinimumWidth(760)
+        self.setMinimumHeight(300)
+        self.setMinimumWidth(320)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.setMouseTracking(True)
         self._rows: list[dict] = []
         self._rects: list[QRectF] = []
@@ -140,13 +143,31 @@ class NNDiagram(QWidget):
     def _activation_for(self, index: int) -> np.ndarray | None:
         if not self._activations:
             return None
+        # La tabla resume la red y omite ReLU, así que emparejamos por nombre
+        # (Entrada, Conv 1, Pool 1, Oculta 1, Salida...) en vez de por posición.
+        row = self._rows[index] if 0 <= index < len(self._rows) else {}
+        name = str(row.get("stage", ""))
+        for item in self._activations:
+            if str(item.get("name", "")) == name:
+                arr = item.get("array")
+                return np.asarray(arr) if arr is not None else None
         if index < len(self._activations):
             arr = self._activations[index].get("array")
             return np.asarray(arr) if arr is not None else None
-        if self._activations:
-            arr = self._activations[-1].get("array")
-            return np.asarray(arr) if arr is not None else None
-        return None
+        arr = self._activations[-1].get("array")
+        return np.asarray(arr) if arr is not None else None
+
+    @staticmethod
+    def _plane(array: np.ndarray) -> np.ndarray:
+        """Elige el mapa 2D con más variación de (N, C, H, W) o (C, H, W)."""
+        a = np.asarray(array)
+        while a.ndim > 3:
+            a = a[0]
+        if a.ndim == 3:
+            flat = a.reshape(a.shape[0], -1)
+            idx = int(np.argmax(flat.std(axis=1))) if flat.size else 0
+            a = a[idx]
+        return a
 
     # ------------------------------------------------------------------
     def paintEvent(self, event) -> None:  # noqa: N802
@@ -264,8 +285,8 @@ class NNDiagram(QWidget):
                     base * shrink,
                     base * shrink,
                 )
-                if act is not None and act.ndim >= 3 and act.shape[0] > 0:
-                    self._draw_array(p, act[0], plane)
+                if act is not None and act.ndim >= 2:
+                    self._draw_array(p, self._plane(act), plane)
                 else:
                     p.setBrush(QColor(color.red(), color.green(), color.blue(), 34 + 14 * k))
                     p.setPen(QPen(QColor(color.red(), color.green(), color.blue(), 170), 1.1))
@@ -302,10 +323,10 @@ class NNDiagram(QWidget):
             self._caption(p, rect, row, "Flatten", QColor(PURPLE))
             return
 
-        if kind in ("dense", "softmax"):
+        if kind in ("hidden", "output", "softmax"):
             out = _shape_list(row.get("output_shape"))
             units = out[-1] if out else 3
-            is_out = kind == "softmax" or units <= 6
+            is_out = kind in ("output", "softmax") or units <= 6
             shown = min(units, 7 if not is_out else units)
             r = min(8.0, max(3.5, rect.width() * 0.11))
             gap = min(22.0, (rect.height() * 0.62) / max(1, shown))
@@ -341,7 +362,7 @@ class NNDiagram(QWidget):
                     p.setFont(QFont("Segoe UI", 7))
                     p.drawText(QRectF(rect.left(), yy - 7, rect.width(), 12),
                                Qt.AlignmentFlag.AlignCenter, CLASS_LABELS[cls][:7])
-            self._caption(p, rect, row, row.get("stage", "Densa"), color)
+            self._caption(p, rect, row, row.get("stage", "Oculta"), color)
             return
 
         if kind == "relu":
@@ -404,7 +425,9 @@ class NNDiagram(QWidget):
             qimg = QImage(buf.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
             p.drawImage(rect, qimg)
             return
-        lo, hi = float(a.min()), float(a.max())
+        lo, hi = (float(v) for v in np.percentile(a, [2, 98]))
+        if hi <= lo:
+            lo, hi = float(a.min()), float(a.max())
         norm = (a - lo) / (hi - lo) if hi > lo else np.zeros_like(a)
         u8 = (np.clip(norm, 0, 1) * 255).astype(np.uint8)
         h, w = u8.shape[:2]

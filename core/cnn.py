@@ -2,17 +2,19 @@
 
 Arquitectura por defecto:
     Entrada 1×H×W → Conv(3×3) → ReLU → MaxPool(2) →
-    Conv(3×3) → ReLU → MaxPool(2) → Flatten → Dense → ReLU → Dense → Softmax
+    Conv(3×3) → ReLU → MaxPool(2) → Flatten → Capa oculta → ReLU →
+    Capa de salida → Softmax
 
-El entrenamiento usa entropía cruzada y SGD con Momentum. La convolución se
-vectoriza con ``sliding_window_view`` (im2col) para un rendimiento aceptable
-en CPU.
+La capa oculta es una capa de backpropagation: cada neurona combina todas las
+activaciones del vector aplanado mediante z = x·W + b. El entrenamiento usa
+entropía cruzada y SGD con Momentum. La convolución se vectoriza con
+``sliding_window_view`` (im2col) para un rendimiento aceptable en CPU.
 """
 from __future__ import annotations
 
 import numpy as np
 
-from core.nn import Dense, ReLU, Momentum, softmax
+from core.nn import HiddenLayer, ReLU, Momentum, softmax
 
 DTYPE = np.float32
 
@@ -173,7 +175,27 @@ class CNN:
             Flatten(),
         ]
         feat = filters2 * (input_size // 4) * (input_size // 4)
-        self.layers += [Dense(feat, hidden, rng, dropout=dropout), ReLU(), Dense(hidden, n_out, rng)]
+        self.layers += [
+            HiddenLayer(feat, hidden, rng, dropout=dropout),
+            ReLU(),
+            HiddenLayer(hidden, n_out, rng),
+        ]
+
+    def conv_layers(self) -> list[Conv2D]:
+        """Capas convolucionales en orden (Conv 1, Conv 2)."""
+        return [layer for layer in self.layers if isinstance(layer, Conv2D)]
+
+    def hidden_layers(self) -> list[HiddenLayer]:
+        """Capas de backpropagation: la oculta y la de salida."""
+        return [layer for layer in self.layers if isinstance(layer, HiddenLayer)]
+
+    def hidden_layer(self) -> HiddenLayer:
+        """Primera capa oculta (la que recibe el vector aplanado)."""
+        return self.hidden_layers()[0]
+
+    def output_layer(self) -> HiddenLayer:
+        """Capa de salida que produce los tres logits antes de Softmax."""
+        return self.hidden_layers()[-1]
 
     def set_training(self, flag: bool) -> None:
         """Activa o desactiva el dropout de las capas que lo soportan."""
@@ -212,7 +234,7 @@ class CNN:
         if arr.ndim == 2:
             arr = arr.reshape(-1, 1, self.input_size, self.input_size)
         trace = [{"name": "Entrada", "kind": "input", "array": arr.copy()}]
-        conv_i = pool_i = dense_i = 0
+        conv_i = pool_i = hidden_i = 0
         for layer in self.layers:
             arr = layer.forward(arr)
             kind = type(layer).__name__
@@ -222,9 +244,12 @@ class CNN:
             elif kind == "MaxPool2D":
                 pool_i += 1
                 name = f"Pool {pool_i}"
-            elif kind == "Dense":
-                dense_i += 1
-                name = f"Densa {dense_i}"
+            elif kind == "HiddenLayer":
+                if layer is self.layers[-1]:
+                    name = "Salida"
+                else:
+                    hidden_i += 1
+                    name = f"Oculta {hidden_i}"
             elif kind == "Flatten":
                 name = "Flatten"
             else:
@@ -235,7 +260,7 @@ class CNN:
 
     def describe_layers(self) -> list[dict]:
         rows: list[dict] = []
-        conv_i = pool_i = dense_i = 0
+        conv_i = pool_i = hidden_i = 0
         for layer in self.layers:
             kind = type(layer).__name__
             if kind == "Conv2D":
@@ -245,9 +270,13 @@ class CNN:
             elif kind == "MaxPool2D":
                 pool_i += 1
                 rows.append({"layer": f"Pool {pool_i}", "in": None, "out": None, "params": 0, "kind": kind})
-            elif kind == "Dense":
-                dense_i += 1
-                rows.append({"layer": f"Densa {dense_i}", "in": layer.W.shape[0], "out": layer.W.shape[1],
+            elif kind == "HiddenLayer":
+                if layer is self.layers[-1]:
+                    name = "Salida"
+                else:
+                    hidden_i += 1
+                    name = f"Oculta {hidden_i}"
+                rows.append({"layer": name, "in": layer.W.shape[0], "out": layer.W.shape[1],
                              "params": int(layer.W.size + layer.b.size), "kind": kind})
             elif kind == "Flatten":
                 rows.append({"layer": "Flatten", "in": None, "out": None, "params": 0, "kind": kind})

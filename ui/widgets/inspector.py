@@ -32,15 +32,19 @@ def parameter_table(model) -> list[tuple[str, np.ndarray, np.ndarray]]:
         return []
     names: list[str] = []
     conv_i = 0
-    dense_i = 0
-    for layer in getattr(model, "layers", []):
+    hidden_i = 0
+    layers = getattr(model, "layers", [])
+    for layer in layers:
         kind = type(layer).__name__
         if kind == "Conv2D":
             conv_i += 1
             base = f"Conv{conv_i}"
-        elif kind == "Dense":
-            dense_i += 1
-            base = f"Densa{dense_i}"
+        elif kind == "HiddenLayer":
+            if layers and layer is layers[-1]:
+                base = "Salida"
+            else:
+                hidden_i += 1
+                base = f"Oculta{hidden_i}"
         else:
             continue
         for pname, _ in layer.params():

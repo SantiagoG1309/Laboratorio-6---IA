@@ -1,5 +1,23 @@
 # Historial de cambios
 
+## v1.1.1 — 2026-11-08
+
+### Aplicación
+- Pestaña **Arquitectura** adaptable: sin desplazamiento horizontal a 1024 × 620, controles que
+  se reacomodan, tabla con columnas elásticas y diagrama que se ajusta al ancho.
+- **Laboratorio numérico** rehecho con los pesos aprendidos del modelo cargado y una muestra real
+  del dataset preprocesada: convolución de un filtro, producto punto de una neurona oculta y
+  Softmax de salida, paso a paso.
+- Las antiguas capas «densas» ahora se llaman **capas ocultas** en el núcleo, la tabla, el
+  diagrama, el inspector, el glosario y la documentación.
+- **Pipeline**: se eliminaron los interruptores duplicados de la derecha; cada tarjeta de etapa
+  conserva su propio control.
+- **Entrenamiento**: tooltips explicativos en división de datos, modelo, arquitectura, métricas,
+  gráfica, progreso y registro; botón **Aplicar configuración recomendada**.
+
+### Distribución
+- Versión de Windows `1.1.1.0` y capturas actualizadas.
+
 ## v1.1.0 — 2026-11-08
 
 ### Aplicación

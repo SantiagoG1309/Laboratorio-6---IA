@@ -28,18 +28,36 @@ from ui.theme import (
     MUTED, MUTED_2, ON_ACCENT, PURPLE, SUCCESS, SURFACE, SURFACE_2, TEXT, WARNING, rgba, qcolor
 )
 from ui.widgets.cards import Card, Divider, SectionHeader, StatCard, Badge
+from ui.widgets.flow_layout import FlowLayout, ResponsiveGrid
 from ui.widgets.matrix_table import MatrixTable
 from ui.widgets.nn_diagram import NNDiagram
 from core.architecture import (
-    ArchRow, cnn_rows, totals, EXCEL_COLUMNS,
-    cnn_architecture_rows,
-    build_lab_steps, LabStep, sample_matrix, matrix_from_patch,
+    ArchRow, totals, EXCEL_COLUMNS, cnn_architecture_rows,
+    conv1_frames, hidden_frames, softmax_frames, LabStep,
     audit_imports, MANUAL_ENGINE_CHECKS
 )
-from core.config import CLASSES, CLASS_LABELS, KERNELS, TrainingConfig
+from core.config import CLASSES, CLASS_LABELS, TrainingConfig
 from core.image_ops import imread_rgb
 from core.nn import gradient_check
-from core.cnn import CNN
+from core.cnn import build_model
+from core.pipeline import preprocess_for_training
+
+
+def _field(label_text: str, widget: QWidget, tip: str = "") -> QWidget:
+    """Etiqueta + control en un bloque compacto que fluye con el ancho."""
+    box = QWidget()
+    row = QHBoxLayout(box)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(6)
+    label = QLabel(label_text)
+    label.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
+    row.addWidget(label)
+    row.addWidget(widget, 1)
+    if tip:
+        box.setToolTip(tip)
+        label.setToolTip(tip)
+        widget.setToolTip(tip)
+    return box
 
 
 class ArchitecturePage(QWidget):
@@ -54,9 +72,15 @@ class ArchitecturePage(QWidget):
         self._use_excel_theme = False  # False: Tema nativo AquaCNN (oscuro elegante según diseño de la app)
         self._updating_controls = False
 
-        self._lab_matrix = sample_matrix(10, seed=42)
         self._lab_steps: list[LabStep] = []
         self._step_idx = 0
+        self._lab_model = None
+        self._lab_cfg: TrainingConfig | None = None
+        self._lab_input: np.ndarray | None = None
+        self._lab_trace: list[dict] = []
+        self._lab_sample = None
+        self._lab_stage = "conv1"
+        self._lab_index = 0
 
         # Scroll principal
         outer = QVBoxLayout(self)
@@ -76,52 +100,54 @@ class ArchitecturePage(QWidget):
         # -----------------------------------------------------------------
         # 1. Cabecera principal y acciones rápidas
         # -----------------------------------------------------------------
-        header_row = QHBoxLayout()
         header = SectionHeader(
             "Arquitectura de la Red Neuronal Convolucional (CNN)",
             "Diagrama interactivo, tensores capa por capa calculados en tiempo real y laboratorio numérico"
         )
-        header_row.addWidget(header, 1)
+        header.title.setWordWrap(True)
+        header.subtitle.setWordWrap(True)
+        layout.addWidget(header)
 
+        header_actions = QHBoxLayout()
+        header_actions.setSpacing(8)
         self.badge_cnn = Badge("Red Convolucional (CNN para Peces)", ACCENT)
-        header_row.addWidget(self.badge_cnn)
+        header_actions.addWidget(self.badge_cnn)
+        header_actions.addStretch(1)
 
         self.sync_btn = QPushButton("Sincronizar con entrenamiento")
         self.sync_btn.setProperty("variant", "ghost")
         self.sync_btn.setIcon(icons.icon("refresh", MUTED, 14))
         self.sync_btn.setToolTip("Carga los parámetros actuales del panel de Entrenamiento y del Pipeline.")
         self.sync_btn.clicked.connect(self.refresh_from_training)
-        header_row.addWidget(self.sync_btn)
-
-        layout.addLayout(header_row)
+        header_actions.addWidget(self.sync_btn)
+        layout.addLayout(header_actions)
 
         # -----------------------------------------------------------------
         # 2. Tarjetas de métricas y totales (Parámetros, FLOPs, Activaciones)
         # -----------------------------------------------------------------
-        stats_row = QHBoxLayout()
-        stats_row.setSpacing(12)
-
+        stats_grid = ResponsiveGrid(spacing=12, min_item_width=150)
         self.card_params = StatCard("cpu", "Parámetros totales", "0", ACCENT)
         self.card_flops = StatCard("sliders", "FLOPs estimados", "0", PURPLE)
         self.card_elements = StatCard("layers", "Activaciones / Salida", "0", ACCENT_2)
         self.card_layers = StatCard("check", "Capas con pesos", "0", SUCCESS)
 
         for card in (self.card_params, self.card_flops, self.card_elements, self.card_layers):
-            stats_row.addWidget(card)
-        layout.addLayout(stats_row)
+            stats_grid.add(card)
+        layout.addWidget(stats_grid)
 
         # -----------------------------------------------------------------
         # 3. Diagrama interactivo de la red neuronal
         # -----------------------------------------------------------------
         diagram_card = Card(padding=14, spacing=10)
-        d_head = QHBoxLayout()
+        d_head = QVBoxLayout()
+        d_head.setSpacing(2)
         d_title = QLabel("Esquema Computacional Interactivo")
         d_title.setProperty("h3", True)
         d_head.addWidget(d_title)
         d_sub = QLabel("Pasa el cursor para ver detalles o haz clic sobre una capa para ubicarla en la tabla")
         d_sub.setProperty("muted", True)
         d_sub.setStyleSheet("font-size: 11px;")
-        d_head.addWidget(d_sub, 1)
+        d_head.addWidget(d_sub)
 
         diagram_card.body().addLayout(d_head)
         self.diagram = NNDiagram()
@@ -135,38 +161,40 @@ class ArchitecturePage(QWidget):
         table_card = Card(padding=16, spacing=12)
 
         # Encabezado de la tarjeta con el diseño estructural solicitado
-        t_head = QHBoxLayout()
-        t_title_box = QVBoxLayout()
+        t_head = QVBoxLayout()
+        t_head.setSpacing(6)
         t_title = QLabel("Desglose Capa por Capa y Dimensiones de Tensores")
         t_title.setProperty("h3", True)
-        t_title_box.addWidget(t_title)
+        t_head.addWidget(t_title)
 
         self.lbl_table_subtitle = QLabel(
             "Flujo de tensores: La salida de cada etapa se convierte en la entrada exacta de la etapa siguiente."
         )
         self.lbl_table_subtitle.setProperty("muted", True)
         self.lbl_table_subtitle.setStyleSheet("font-size: 11px;")
-        t_title_box.addWidget(self.lbl_table_subtitle)
-        t_head.addLayout(t_title_box, 1)
+        t_head.addWidget(self.lbl_table_subtitle)
 
-        self.lbl_arch_badge = QLabel("Arquitectura: Red Neuronal Convolucional (CNN para Peces)")
+        # Acciones en un flujo que se reacomoda cuando la ventana es estrecha
+        t_actions = FlowLayout(h_spacing=8, v_spacing=6, min_item_width=0)
+
+        self.lbl_arch_badge = QLabel("Arquitectura: CNN para peces")
         self.lbl_arch_badge.setStyleSheet(f"color: {ACCENT}; font-size: 11px; font-weight: 600;")
-        t_head.addWidget(self.lbl_arch_badge)
+        t_actions.addWidget(self.lbl_arch_badge)
 
         # Botones de acción de la tabla
-        self.btn_copy_tsv = QPushButton("Copiar tabla")
+        self.btn_copy_tsv = QPushButton("Copiar")
         self.btn_copy_tsv.setProperty("variant", "ghost")
         self.btn_copy_tsv.setIcon(icons.icon("check", MUTED, 13))
         self.btn_copy_tsv.setToolTip("Copia los datos de la tabla en formato TSV (para pegar en Excel).")
         self.btn_copy_tsv.clicked.connect(self._copy_table_tsv)
-        t_head.addWidget(self.btn_copy_tsv)
+        t_actions.addWidget(self.btn_copy_tsv)
 
-        self.btn_export_xlsx = QPushButton("Exportar .xlsx")
+        self.btn_export_xlsx = QPushButton("Excel")
         self.btn_export_xlsx.setProperty("variant", "ghost")
         self.btn_export_xlsx.setIcon(icons.icon("download", MUTED, 13))
         self.btn_export_xlsx.setToolTip("Exporta los cálculos reales de la CNN a una hoja de cálculo Excel.")
         self.btn_export_xlsx.clicked.connect(self._export_to_excel)
-        t_head.addWidget(self.btn_export_xlsx)
+        t_actions.addWidget(self.btn_export_xlsx)
 
         self.btn_toggle_theme = QPushButton("Tema Clásico Excel")
         self.btn_toggle_theme.setProperty("variant", "ghost")
@@ -189,155 +217,143 @@ class ArchitecturePage(QWidget):
         ctrl_layout.setSpacing(10)
 
         # Fila A: Presets de la CNN para peces y accesos rápidos
-        preset_row = QHBoxLayout()
-        preset_row.setSpacing(10)
+        preset_row = FlowLayout(h_spacing=8, v_spacing=6, min_item_width=0)
 
         lbl_preset = QLabel("<b>Configuración CNN:</b>")
         lbl_preset.setStyleSheet(f"color: {ACCENT}; font-size: 11px;")
         preset_row.addWidget(lbl_preset)
 
         self.combo_preset = QComboBox()
-        self.combo_preset.addItem("CNN Estándar Peces (2 Bloques Conv + Pool) · [Por Defecto]", "fish_cnn_2b")
-        self.combo_preset.addItem("CNN Rápida Peces (1 Bloque Conv + Pool)", "fast_1b")
-        self.combo_preset.addItem("CNN Profunda Peces (3 Bloques Conv + Pool)", "deep_3b")
+        self.combo_preset.addItem("CNN estándar de peces · 2 bloques Conv+Pool", "fish_cnn_2b")
+        self.combo_preset.addItem("CNN rápida · 1 bloque Conv+Pool", "fast_1b")
+        self.combo_preset.addItem("CNN profunda · 3 bloques Conv+Pool", "deep_3b")
+        self.combo_preset.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_preset.setMinimumContentsLength(18)
         self.combo_preset.currentIndexChanged.connect(self._on_preset_changed)
-        preset_row.addWidget(self.combo_preset, 1)
+        preset_row.addWidget(self.combo_preset)
 
-        self.btn_reset_fish = QPushButton("Restablecer a CNN Peces (48×48)")
+        self.btn_reset_fish = QPushButton("Restablecer CNN peces")
         self.btn_reset_fish.setProperty("variant", "ghost")
         self.btn_reset_fish.setIcon(icons.icon("fish", MUTED, 13))
+        self.btn_reset_fish.setToolTip("Vuelve a la configuración de 48×48, 6/12 filtros y 64 neuronas ocultas.")
         self.btn_reset_fish.clicked.connect(lambda: self._set_preset_by_key("fish_cnn_2b"))
         preset_row.addWidget(self.btn_reset_fish)
 
         ctrl_layout.addLayout(preset_row)
 
-        # Fila B: Parámetros de la red modificables en tiempo real
-        params_grid = QGridLayout()
-        params_grid.setHorizontalSpacing(14)
-        params_grid.setVerticalSpacing(8)
+        # Fila B: parámetros de la red en un flujo que se adapta al ancho
+        params_flow = FlowLayout(h_spacing=12, v_spacing=8, min_item_width=225)
 
-        # 1. Número de bloques Conv + Pool (1 a 3 para la CNN de clasificación)
-        lbl_b = QLabel("Bloques Conv+Pool:")
-        lbl_b.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
         self.spin_blocks = QSpinBox()
         self.spin_blocks.setRange(1, 3)
         self.spin_blocks.setValue(2)
-        self.spin_blocks.setToolTip("Determina cuántos pares de convolución y pooling se encadenan.")
-        self.spin_blocks.valueChanged.connect(self._recalculate_architecture)
-        params_grid.addWidget(lbl_b, 0, 0)
-        params_grid.addWidget(self.spin_blocks, 0, 1)
+        params_flow.addWidget(_field(
+            "Bloques Conv+Pool:", self.spin_blocks,
+            "Cuántos pares de convolución y pooling se encadenan antes de clasificar.",
+        ))
 
-        # 2. Resolución de entrada H×W
-        lbl_sz = QLabel("Resolución Entrada:")
-        lbl_sz.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
         self.combo_size = QComboBox()
         for sz in (32, 40, 48, 64, 96, 128):
             self.combo_size.addItem(f"{sz} × {sz}", sz)
         self.combo_size.setCurrentIndex(2)  # 48x48
-        self.combo_size.currentIndexChanged.connect(self._recalculate_architecture)
-        params_grid.addWidget(lbl_sz, 0, 2)
-        params_grid.addWidget(self.combo_size, 0, 3)
+        params_flow.addWidget(_field(
+            "Resolución:", self.combo_size,
+            "Tamaño de la imagen que recibe la red; debe coincidir con el usado al entrenar.",
+        ))
 
-        # 3. Canales de entrada (1 para escala de grises, 3 para RGB)
-        lbl_ch = QLabel("Canales Entrada:")
-        lbl_ch.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
         self.combo_channels = QComboBox()
-        self.combo_channels.addItem("1 (Grises · Tratamiento)", 1)
-        self.combo_channels.addItem("3 (RGB · Color)", 3)
-        self.combo_channels.currentIndexChanged.connect(self._recalculate_architecture)
-        params_grid.addWidget(lbl_ch, 0, 4)
-        params_grid.addWidget(self.combo_channels, 0, 5)
+        self.combo_channels.addItem("1 · grises", 1)
+        self.combo_channels.addItem("3 · RGB", 3)
+        params_flow.addWidget(_field(
+            "Canales:", self.combo_channels,
+            "Canales de entrada: 1 si el pipeline convierte a grises, 3 si conserva color.",
+        ))
 
-        # 4. Filtros Conv 1
-        lbl_f1 = QLabel("Filtros Conv 1:")
-        lbl_f1.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
         self.spin_f1 = QSpinBox()
         self.spin_f1.setRange(2, 64)
         self.spin_f1.setValue(6)
-        self.spin_f1.valueChanged.connect(self._recalculate_architecture)
-        params_grid.addWidget(lbl_f1, 1, 0)
-        params_grid.addWidget(self.spin_f1, 1, 1)
+        params_flow.addWidget(_field(
+            "Filtros Conv 1:", self.spin_f1,
+            "Número de kernels diferentes que aprende la primera convolución.",
+        ))
 
-        # 5. Kernel Conv 1
-        lbl_k1 = QLabel("Kernel Conv 1:")
-        lbl_k1.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
         self.combo_k1 = QComboBox()
         for k_val in (3, 5):
             self.combo_k1.addItem(f"{k_val} × {k_val}", k_val)
         self.combo_k1.setCurrentIndex(0)
-        self.combo_k1.currentIndexChanged.connect(self._recalculate_architecture)
-        params_grid.addWidget(lbl_k1, 1, 2)
-        params_grid.addWidget(self.combo_k1, 1, 3)
+        params_flow.addWidget(_field(
+            "Kernel Conv 1:", self.combo_k1,
+            "Tamaño de la ventana 3×3 o 5×5 que recorre la imagen.",
+        ))
 
-        # 6. Stride y Padding Conv 1
-        sp_box = QHBoxLayout()
-        sp_box.setSpacing(4)
+        sp_box = QWidget()
+        sp_row = QHBoxLayout(sp_box)
+        sp_row.setContentsMargins(0, 0, 0, 0)
+        sp_row.setSpacing(4)
         self.spin_s1 = QSpinBox()
         self.spin_s1.setRange(1, 2)
         self.spin_s1.setValue(1)
-        self.spin_s1.valueChanged.connect(self._recalculate_architecture)
+        sp_row.addWidget(QLabel("S:"))
+        sp_row.addWidget(self.spin_s1)
         self.spin_p1 = QSpinBox()
         self.spin_p1.setRange(0, 2)
         self.spin_p1.setValue(1)
-        self.spin_p1.valueChanged.connect(self._recalculate_architecture)
-        sp_box.addWidget(QLabel("S:"))
-        sp_box.addWidget(self.spin_s1)
-        sp_box.addWidget(QLabel("P:"))
-        sp_box.addWidget(self.spin_p1)
-        lbl_sp1 = QLabel("Stride / Padding C1:")
-        lbl_sp1.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
-        params_grid.addWidget(lbl_sp1, 1, 4)
-        params_grid.addLayout(sp_box, 1, 5)
+        sp_row.addWidget(QLabel("P:"))
+        sp_row.addWidget(self.spin_p1)
+        params_flow.addWidget(_field(
+            "Stride / Padding C1:", sp_box,
+            "Stride: píxeles que salta la ventana. Padding: borde de ceros que conserva las orillas.",
+        ))
 
-        # 7. Filtros Conv 2
-        lbl_f2 = QLabel("Filtros Conv 2:")
-        lbl_f2.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
         self.spin_f2 = QSpinBox()
         self.spin_f2.setRange(2, 128)
         self.spin_f2.setValue(12)
-        self.spin_f2.valueChanged.connect(self._recalculate_architecture)
-        params_grid.addWidget(lbl_f2, 2, 0)
-        params_grid.addWidget(self.spin_f2, 2, 1)
+        params_flow.addWidget(_field(
+            "Filtros Conv 2:", self.spin_f2,
+            "Kernels de la segunda convolución; cada uno combina los mapas de la primera.",
+        ))
 
-        # 8. Filtros Conv 3
-        lbl_f3 = QLabel("Filtros Conv 3:")
-        lbl_f3.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
         self.spin_f3 = QSpinBox()
         self.spin_f3.setRange(2, 256)
         self.spin_f3.setValue(24)
-        self.spin_f3.valueChanged.connect(self._recalculate_architecture)
-        params_grid.addWidget(lbl_f3, 2, 2)
-        params_grid.addWidget(self.spin_f3, 2, 3)
+        params_flow.addWidget(_field(
+            "Filtros Conv 3:", self.spin_f3,
+            "Solo se usa con 3 bloques: kernels de la tercera convolución.",
+        ))
 
-        # 9. Pooling toggle
-        lbl_pool = QLabel("Max Pooling:")
-        lbl_pool.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
-        self.chk_pool = QCheckBox("Activar Pooling (2×2 s=2)")
+        self.chk_pool = QCheckBox("Activar pooling 2×2")
         self.chk_pool.setChecked(True)
-        self.chk_pool.toggled.connect(self._recalculate_architecture)
-        params_grid.addWidget(lbl_pool, 2, 4)
-        params_grid.addWidget(self.chk_pool, 2, 5)
+        params_flow.addWidget(_field(
+            "Pooling:", self.chk_pool,
+            "Reduce cada mapa a la mitad con ventanas 2×2 y stride 2.",
+        ))
 
-        # 10. Capa Densa (FC)
-        lbl_hid = QLabel("Neuronas Densa (FC):")
-        lbl_hid.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
         self.spin_hidden = QSpinBox()
         self.spin_hidden.setRange(8, 512)
         self.spin_hidden.setValue(64)
         self.spin_hidden.setSingleStep(8)
-        self.spin_hidden.valueChanged.connect(self._recalculate_architecture)
-        params_grid.addWidget(lbl_hid, 3, 0)
-        params_grid.addWidget(self.spin_hidden, 3, 1)
+        params_flow.addWidget(_field(
+            "Neuronas ocultas:", self.spin_hidden,
+            "Neuronas de la capa oculta que combinan los patrones antes de decidir la clase.",
+        ))
 
-        # 11. Clases de salida (Fijo en las 3 clases de peces)
-        lbl_cls = QLabel("Clasificación Peces:")
-        lbl_cls.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
-        badge_cls = Badge("3 Clases: Trucha · Mojarra · Pavón", SUCCESS)
+        badge_cls = Badge("3 clases: Trucha · Mojarra · Pavón", SUCCESS)
         badge_cls.setFixedHeight(26)
-        params_grid.addWidget(lbl_cls, 3, 2)
-        params_grid.addWidget(badge_cls, 3, 3, 1, 3)
+        params_flow.addWidget(_field("Salida:", badge_cls, "Clases fijas del laboratorio de peces."))
 
-        ctrl_layout.addLayout(params_grid)
+        self.spin_blocks.valueChanged.connect(self._recalculate_architecture)
+        self.combo_size.currentIndexChanged.connect(self._recalculate_architecture)
+        self.combo_channels.currentIndexChanged.connect(self._recalculate_architecture)
+        self.spin_f1.valueChanged.connect(self._recalculate_architecture)
+        self.combo_k1.currentIndexChanged.connect(self._recalculate_architecture)
+        self.spin_s1.valueChanged.connect(self._recalculate_architecture)
+        self.spin_p1.valueChanged.connect(self._recalculate_architecture)
+        self.spin_f2.valueChanged.connect(self._recalculate_architecture)
+        self.spin_f3.valueChanged.connect(self._recalculate_architecture)
+        self.chk_pool.toggled.connect(self._recalculate_architecture)
+        self.spin_hidden.valueChanged.connect(self._recalculate_architecture)
+
+        ctrl_layout.addLayout(params_flow)
         table_card.body().addWidget(ctrl_frame)
 
         # -----------------------------------------------------------------
@@ -356,13 +372,17 @@ class ArchitecturePage(QWidget):
         self.table.setMinimumHeight(280)
         self.table.currentCellChanged.connect(self._on_table_row_changed)
 
-        # Configuración de anchos de columnas
+        # Todas las columnas se reparten el ancho; el texto largo se elide y el
+        # contenido completo queda en el tooltip de cada celda.
         header_view = self.table.horizontalHeader()
         header_view.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        header_view.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header_view.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header_view.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        header_view.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        header_view.setMinimumSectionSize(48)
+        header_view.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setMinimumWidth(0)
+        self.table.setWordWrap(False)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.table.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
 
         table_card.body().addWidget(self.table)
         layout.addWidget(table_card)
@@ -370,67 +390,69 @@ class ArchitecturePage(QWidget):
         # -----------------------------------------------------------------
         # 5. Laboratorio Numérico Paso a Paso (Convolución, ReLU y Pooling)
         # -----------------------------------------------------------------
-        lab_card = Card(padding=16, spacing=14)
+        lab_card = Card(padding=12, spacing=12)
         l_head = QHBoxLayout()
         l_col = QVBoxLayout()
         l_title = QLabel("Laboratorio Numérico Paso a Paso")
         l_title.setProperty("h2", True)
         l_col.addWidget(l_title)
         l_sub = QLabel(
-            "Simulación visual interactiva de la convolución 2D, activación ReLU y Max/Average Pooling celda por celda."
+            "Con los pesos reales del modelo: convolución de un filtro aprendido, producto punto de una "
+            "neurona oculta y normalización Softmax de la predicción."
         )
         l_sub.setProperty("muted", True)
         l_col.addWidget(l_sub)
         l_head.addLayout(l_col, 1)
         lab_card.body().addLayout(l_head)
 
-        # Controles del laboratorio
-        ctrl_box = QHBoxLayout()
-        ctrl_box.setSpacing(10)
+        # Controles del laboratorio: etapa real, filtro/neurona y muestra
+        lab_flow = FlowLayout(h_spacing=10, v_spacing=8, min_item_width=215)
 
-        ctrl_box.addWidget(QLabel("Filtro / Kernel:"))
-        self.combo_kernel = QComboBox()
-        for k_key, k_info in KERNELS.items():
-            if k_key != "custom":
-                self.combo_kernel.addItem(k_info["label"], k_key)
-        self.combo_kernel.currentIndexChanged.connect(self._rebuild_lab)
-        ctrl_box.addWidget(self.combo_kernel)
+        self.combo_stage = QComboBox()
+        self.combo_stage.addItem("Conv 1 · filtro aprendido", "conv1")
+        self.combo_stage.addItem("Capa oculta · neurona", "hidden")
+        self.combo_stage.addItem("Salida · Softmax", "softmax")
+        self.combo_stage.currentIndexChanged.connect(self._on_lab_stage_changed)
+        lab_flow.addWidget(_field(
+            "Etapa:", self.combo_stage,
+            "Elige qué parte real de la CNN quieres desglosar con los pesos del modelo cargado.",
+        ))
 
-        ctrl_box.addWidget(QLabel("Padding:"))
-        self.combo_pad = QComboBox()
-        self.combo_pad.addItem("0 (Sin padding)", 0)
-        self.combo_pad.addItem("1 (Padding = 1)", 1)
-        self.combo_pad.setCurrentIndex(1)
-        self.combo_pad.currentIndexChanged.connect(self._rebuild_lab)
-        ctrl_box.addWidget(self.combo_pad)
+        self.combo_filter = QComboBox()
+        self.combo_filter.currentIndexChanged.connect(self._rebuild_lab)
+        self._filter_field = _field(
+            "Filtro Conv 1:", self.combo_filter,
+            "Cada filtro es un kernel 3×3 aprendido que detecta un patrón distinto.",
+        )
+        lab_flow.addWidget(self._filter_field)
 
-        ctrl_box.addWidget(QLabel("Stride:"))
-        self.combo_stride = QComboBox()
-        self.combo_stride.addItem("1", 1)
-        self.combo_stride.addItem("2", 2)
-        self.combo_stride.currentIndexChanged.connect(self._rebuild_lab)
-        ctrl_box.addWidget(self.combo_stride)
+        self.spin_neuron = QSpinBox()
+        self.spin_neuron.setRange(1, 64)
+        self.spin_neuron.setValue(1)
+        self.spin_neuron.valueChanged.connect(self._rebuild_lab)
+        self._neuron_field = _field(
+            "Neurona oculta:", self.spin_neuron,
+            "Neurona de la capa oculta cuyo producto punto x·w + b se muestra.",
+        )
+        lab_flow.addWidget(self._neuron_field)
 
-        ctrl_box.addWidget(QLabel("Pooling:"))
-        self.combo_pool = QComboBox()
-        self.combo_pool.addItem("Max Pooling", "max")
-        self.combo_pool.addItem("Average Pooling", "mean")
-        self.combo_pool.currentIndexChanged.connect(self._rebuild_lab)
-        ctrl_box.addWidget(self.combo_pool)
-
-        self.btn_reset_lab = QPushButton("Muestra del dataset")
+        self.btn_reset_lab = QPushButton("Muestra aleatoria del dataset")
         self.btn_reset_lab.setProperty("variant", "ghost")
         self.btn_reset_lab.setIcon(icons.icon("fish", MUTED, 13))
-        self.btn_reset_lab.setToolTip("Carga una muestra real del dataset de peces como matriz de entrada.")
+        self.btn_reset_lab.setToolTip("Preprocesa una imagen real del dataset con el pipeline y la pasa por la red.")
         self.btn_reset_lab.clicked.connect(self._load_dataset_patch)
-        ctrl_box.addWidget(self.btn_reset_lab)
+        lab_flow.addWidget(self.btn_reset_lab)
 
-        ctrl_box.addStretch(1)
-        lab_card.body().addLayout(ctrl_box)
+        self._lab_sample_label = QLabel("Sin muestra")
+        self._lab_sample_label.setProperty("subtle", True)
+        self._lab_sample_label.setWordWrap(True)
+        lab_flow.addWidget(self._lab_sample_label)
+
+        lab_card.body().addLayout(lab_flow)
 
         # Visualizador de matrices
         mats_layout = QHBoxLayout()
-        mats_layout.setSpacing(14)
+        mats_layout.setSpacing(6)
         mats_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Entrada
@@ -438,29 +460,37 @@ class ArchitecturePage(QWidget):
         box_src.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_src_title = QLabel("Matriz de Entrada")
         self.lbl_src_title.setStyleSheet(f"color: {ACCENT}; font-weight: 600; font-size: 11px;")
-        box_src.addWidget(self.lbl_src_title, 0, Qt.AlignmentFlag.AlignCenter)
+        self.lbl_src_title.setWordWrap(True)
+        self.lbl_src_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        box_src.addWidget(self.lbl_src_title)
         self.mat_source = MatrixTable(10, 10, editable=False)
-        box_src.addWidget(self.mat_source)
+        box_src.addWidget(self.mat_source, 0, Qt.AlignmentFlag.AlignCenter)
         mats_layout.addLayout(box_src)
 
         # Operador 1
         self.lbl_op1 = QLabel("⊛")
-        self.lbl_op1.setStyleSheet(f"color: {MUTED}; font-size: 24px; font-weight: bold;")
+        self.lbl_op1.setStyleSheet(f"color: {MUTED}; font-size: 20px; font-weight: bold;")
+        self.lbl_op1.setFixedWidth(18)
+        self.lbl_op1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         mats_layout.addWidget(self.lbl_op1)
 
-        # Kernel
+        # Kernel / pesos
         box_k = QVBoxLayout()
         box_k.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_kernel_title = QLabel("Filtro 3×3")
         self.lbl_kernel_title.setStyleSheet(f"color: {WARNING}; font-weight: 600; font-size: 11px;")
-        box_k.addWidget(self.lbl_kernel_title, 0, Qt.AlignmentFlag.AlignCenter)
+        self.lbl_kernel_title.setWordWrap(True)
+        self.lbl_kernel_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        box_k.addWidget(self.lbl_kernel_title)
         self.mat_kernel = MatrixTable(3, 3, editable=False)
-        box_k.addWidget(self.mat_kernel)
+        box_k.addWidget(self.mat_kernel, 0, Qt.AlignmentFlag.AlignCenter)
         mats_layout.addLayout(box_k)
 
         # Operador 2
         self.lbl_op2 = QLabel("=")
-        self.lbl_op2.setStyleSheet(f"color: {MUTED}; font-size: 24px; font-weight: bold;")
+        self.lbl_op2.setStyleSheet(f"color: {MUTED}; font-size: 20px; font-weight: bold;")
+        self.lbl_op2.setFixedWidth(18)
+        self.lbl_op2.setAlignment(Qt.AlignmentFlag.AlignCenter)
         mats_layout.addWidget(self.lbl_op2)
 
         # Salida
@@ -468,58 +498,68 @@ class ArchitecturePage(QWidget):
         box_tgt.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_tgt_title = QLabel("Mapa de Características")
         self.lbl_tgt_title.setStyleSheet(f"color: {SUCCESS}; font-weight: 600; font-size: 11px;")
-        box_tgt.addWidget(self.lbl_tgt_title, 0, Qt.AlignmentFlag.AlignCenter)
+        self.lbl_tgt_title.setWordWrap(True)
+        self.lbl_tgt_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        box_tgt.addWidget(self.lbl_tgt_title)
         self.mat_target = MatrixTable(10, 10, editable=False)
-        box_tgt.addWidget(self.mat_target)
+        box_tgt.addWidget(self.mat_target, 0, Qt.AlignmentFlag.AlignCenter)
         mats_layout.addLayout(box_tgt)
 
         lab_card.body().addLayout(mats_layout)
 
         # Reproductor de pasos
-        player = QHBoxLayout()
-        player.setSpacing(8)
+        player = FlowLayout(h_spacing=8, v_spacing=6, min_item_width=80)
 
         self.btn_first = QPushButton("Inicio")
         self.btn_first.setProperty("variant", "ghost")
         self.btn_first.setIcon(icons.icon("arrow-left", MUTED, 13))
+        self.btn_first.setToolTip("Ir al primer paso del recorrido numérico.")
         self.btn_first.clicked.connect(lambda: self._show_lab_step(0))
         player.addWidget(self.btn_first)
 
         self.btn_prev = QPushButton("Anterior")
         self.btn_prev.setProperty("variant", "ghost")
         self.btn_prev.setIcon(icons.icon("arrow-left", MUTED, 13))
+        self.btn_prev.setToolTip("Paso anterior.")
         self.btn_prev.clicked.connect(lambda: self._show_lab_step(self._step_idx - 1))
         player.addWidget(self.btn_prev)
 
         self.btn_play = QPushButton("Reproducir")
         self.btn_play.setProperty("variant", "primary")
         self.btn_play.setIcon(icons.icon("play", ON_ACCENT, 13))
+        self.btn_play.setToolTip("Recorre los pasos automáticamente.")
         self.btn_play.clicked.connect(self._toggle_play)
         player.addWidget(self.btn_play)
 
         self.btn_next = QPushButton("Siguiente")
         self.btn_next.setProperty("variant", "ghost")
         self.btn_next.setIcon(icons.icon("arrow", MUTED, 13))
+        self.btn_next.setToolTip("Paso siguiente.")
         self.btn_next.clicked.connect(lambda: self._show_lab_step(self._step_idx + 1))
         player.addWidget(self.btn_next)
 
         self.btn_last = QPushButton("Final")
         self.btn_last.setProperty("variant", "ghost")
         self.btn_last.setIcon(icons.icon("arrow", MUTED, 13))
+        self.btn_last.setToolTip("Ir al último paso del recorrido numérico.")
         self.btn_last.clicked.connect(lambda: self._show_lab_step(len(self._lab_steps) - 1))
         player.addWidget(self.btn_last)
 
+        lab_card.body().addLayout(player)
+
+        slider_row = QHBoxLayout()
+        slider_row.setSpacing(8)
         self._lab_slider = QSlider(Qt.Orientation.Horizontal)
         self._lab_slider.setRange(0, 0)
+        self._lab_slider.setToolTip("Arrastra para recorrer los pasos del cálculo.")
         self._lab_slider.valueChanged.connect(self._show_lab_step)
-        player.addWidget(self._lab_slider, 1)
+        slider_row.addWidget(self._lab_slider, 1)
 
         self._lab_step_label = QLabel("Paso 0 / 0")
-        self._lab_step_label.setStyleSheet(f"color: {TEXT}; font-weight: 600; font-size: 12px; min-width: 140px;")
+        self._lab_step_label.setStyleSheet(f"color: {TEXT}; font-weight: 600; font-size: 12px;")
         self._lab_step_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        player.addWidget(self._lab_step_label)
-
-        lab_card.body().addLayout(player)
+        slider_row.addWidget(self._lab_step_label)
+        lab_card.body().addLayout(slider_row)
 
         # Detalle de la celda y fórmula
         self.calc_box = QFrame()
@@ -592,6 +632,19 @@ class ArchitecturePage(QWidget):
         self._play_timer.setInterval(320)
         self._play_timer.timeout.connect(self._on_play_tick)
 
+        # Ajustes de responsividad: el contenido se adapta al ancho disponible
+        self.setMinimumWidth(0)
+        content.setMinimumWidth(0)
+        for label in content.findChildren(QLabel):
+            label.setWordWrap(True)
+            label.setMinimumWidth(0)
+        for combo in content.findChildren(QComboBox):
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(8)
+            combo.setMinimumWidth(70)
+            combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.table.setMinimumWidth(0)
+
         # Aplicar estilo inicial de la tabla y calcular arquitectura
         self._apply_table_stylesheet()
         self._recalculate_architecture()
@@ -619,7 +672,7 @@ class ArchitecturePage(QWidget):
 
         self.lbl_table_subtitle.setText(
             f"Flujo secuencial: la salida de cada etapa se convierte en la entrada exacta de la etapa siguiente · "
-            f"{num_b} bloque(s) Conv+Pool · Entrada {size}×{size}×{in_ch} · Densa {hidden} neuronas · 3 clases (Trucha, Mojarra, Pavón)"
+            f"{num_b} bloque(s) Conv+Pool · Entrada {size}×{size}×{in_ch} · Capa oculta de {hidden} neuronas · 3 clases (Trucha, Mojarra, Pavón)"
         )
 
         # Generar arquitectura fiel al diseño de la red para peces
@@ -768,7 +821,8 @@ class ArchitecturePage(QWidget):
             "Pool 2": PURPLE,
             "Pool 3": PURPLE,
             "Flatten": DANGER,
-            "Densa (FC)": WARNING,
+            "Oculta": WARNING,
+            "Salida": SUCCESS,
             "Softmax": SUCCESS,
         }
 
@@ -932,6 +986,7 @@ class ArchitecturePage(QWidget):
     def refresh_from_training(self) -> None:
         """Sincroniza la arquitectura en tiempo real con el panel de Entrenamiento y Pipeline."""
         cfg = getattr(self.main, "training_cfg", None) or TrainingConfig()
+        exp = getattr(self.main, "explorer", None)
 
         self._updating_controls = True
         try:
@@ -952,12 +1007,9 @@ class ArchitecturePage(QWidget):
             self.spin_f2.setValue(int(cfg.conv_filters2))
             self.spin_hidden.setValue(int(cfg.hidden_units))
 
-            # Verificar si en el pipeline visual se desactivó el pooling
-            exp = getattr(self.main, "explorer", None)
-            if exp and hasattr(exp, "controls") and hasattr(exp.controls, "stage_switches"):
-                sw_pool = exp.controls.stage_switches.get("pool")
-                if sw_pool is not None:
-                    self.chk_pool.setChecked(bool(sw_pool.isChecked()))
+            # El pooling 2×2 es parte interna de la CNN y no debe confundirse con
+            # la etapa de pooling del pipeline visual, que solo afecta la imagen.
+            self.chk_pool.setChecked(True)
         finally:
             self._updating_controls = False
 
@@ -975,66 +1027,213 @@ class ArchitecturePage(QWidget):
                         self.diagram.set_activations(trace)
                     except Exception:  # noqa: BLE001
                         pass
+        self._rebuild_lab()
 
     def refresh_model(self) -> None:
-        """Carga una muestra del dataset cuando este se escanea."""
+        """Toma la primera muestra del dataset para el laboratorio cuando se escanea."""
         info = getattr(self.main, "dataset_info", None)
         if info and info.samples:
-            try:
-                sample = info.samples[0]
-                img = imread_rgb(sample.path)
-                self.diagram.set_image(img)
-                self._lab_matrix = matrix_from_patch(img, 10)
-                self._rebuild_lab()
-            except Exception:  # noqa: BLE001
-                pass
+            self._lab_sample = info.samples[0]
+        self._rebuild_lab()
 
     def _load_dataset_patch(self) -> None:
         info = getattr(self.main, "dataset_info", None)
         if not info or not info.samples:
-            self._lab_matrix = sample_matrix(10, seed=np.random.randint(1, 9999))
+            if hasattr(self.main, "toast"):
+                self.main.toast("Escanea un dataset para usar muestras reales en el laboratorio.", "warning")
+            self._lab_sample = None
             self._rebuild_lab()
             return
-        idx = np.random.randint(0, len(info.samples))
-        sample = info.samples[idx]
-        try:
-            img = imread_rgb(sample.path)
-            self.diagram.set_image(img)
-            self._lab_matrix = matrix_from_patch(img, 10)
-            self._rebuild_lab()
-            if hasattr(self.main, "toast"):
-                self.main.toast(f"Parche cargado de {sample.class_name}: {sample.path.name}", "info")
-        except Exception as exc:  # noqa: BLE001
-            if hasattr(self.main, "toast"):
-                self.main.toast(f"No se pudo cargar la imagen: {exc}", "warning")
+        self._lab_sample = info.samples[int(np.random.randint(0, len(info.samples)))]
+        self._rebuild_lab()
+        if hasattr(self.main, "toast"):
+            self.main.toast(
+                f"Muestra cargada: {self._lab_sample.class_name} · {self._lab_sample.path.name}",
+                "info",
+            )
 
     # ---------------------------------------------------------------------
-    # Lógica del laboratorio numérico interactivo
+    # Lógica del laboratorio numérico: pesos y activaciones reales
     # ---------------------------------------------------------------------
+    def _lab_context(self):
+        """Modelo, configuración y tamaño de entrada que usa el laboratorio."""
+        main = getattr(self, "main", None)
+        model = getattr(main, "loaded_model", None)
+        meta = dict(getattr(main, "loaded_meta", {}) or {})
+        cfg = getattr(main, "loaded_cfg", None)
+        trained = model is not None
+
+        if model is None:
+            result = getattr(main, "training_result", None)
+            if result is not None and getattr(result, "model", None) is not None:
+                model = result.model
+                cfg = getattr(result, "config", None) or cfg
+                trained = True
+
+        if cfg is None:
+            cfg = getattr(main, "training_cfg", None) or TrainingConfig()
+
+        if model is None:
+            model = build_model(
+                getattr(cfg, "model_type", "cnn"),
+                int(cfg.input_size),
+                int(cfg.hidden_units),
+                int(cfg.conv_filters),
+                int(cfg.conv_filters2),
+                n_out=len(CLASSES),
+                seed=int(cfg.seed),
+                dropout=float(cfg.dropout),
+            )
+            trained = False
+
+        size = int(meta.get("input_size") or getattr(cfg, "input_size", 48))
+        return model, cfg, size, trained
+
+    def _lab_input_for(self, size: int):
+        """Entrada real del modelo: muestra del dataset preprocesada o tensor del pipeline."""
+        sample = self._lab_sample
+        if sample is not None:
+            explorer = getattr(self.main, "explorer", None)
+            pcfg = getattr(explorer, "cfg", None)
+            eq = getattr(pcfg, "equalization", "clahe")
+            clip = float(getattr(pcfg, "clahe_clip", 2.0))
+            roi = bool(getattr(pcfg, "roi_enabled", False))
+            zoom = float(getattr(pcfg, "roi_zoom", 1.0))
+            rx = float(getattr(pcfg, "roi_x", 0.5))
+            ry = float(getattr(pcfg, "roi_y", 0.5))
+            key = (str(sample.path), size, eq, clip, roi, zoom, rx, ry)
+            if getattr(self, "_lab_input_key", None) == key and self._lab_input is not None:
+                return self._lab_input, int(sample.label)
+            try:
+                arr = preprocess_for_training(sample.path, size, eq, clip, roi, zoom, rx, ry)
+                self._lab_input = arr
+                self._lab_input_key = key
+                return arr, int(sample.label)
+            except Exception as exc:  # noqa: BLE001
+                if hasattr(self.main, "toast"):
+                    self.main.toast(f"No se pudo preprocesar la muestra: {exc}", "warning")
+
+        result = getattr(getattr(self.main, "explorer", None), "_result", None)
+        net_input = getattr(result, "net_input", None)
+        if net_input is not None and tuple(net_input.shape[-2:]) == (size, size):
+            return np.asarray(net_input, dtype=np.float32), None
+
+        rng = np.random.default_rng(7)
+        return rng.random((size, size), dtype=np.float32), None
+
+    def _on_lab_stage_changed(self) -> None:
+        stage = str(self.combo_stage.currentData() or "conv1")
+        self._filter_field.setVisible(stage == "conv1")
+        self._neuron_field.setVisible(stage == "hidden")
+        self._rebuild_lab()
+
     def _rebuild_lab(self) -> None:
-        k_key = self.combo_kernel.currentData() or "vertical"
-        kernel_info = KERNELS.get(k_key, KERNELS["vertical"])
-        kernel = kernel_info["matrix"]
-        padding = int(self.combo_pad.currentData() or 0)
-        stride = int(self.combo_stride.currentData() or 1)
-        pool_mode = str(self.combo_pool.currentData() or "max")
+        if not hasattr(self, "combo_stage"):
+            return
+        stage = str(self.combo_stage.currentData() or "conv1")
+        if hasattr(self, "_filter_field"):
+            self._filter_field.setVisible(stage == "conv1")
+            self._neuron_field.setVisible(stage == "hidden")
 
-        self._lab_steps = build_lab_steps(
-            self._lab_matrix,
-            kernels=[kernel],
-            padding=padding,
-            stride=stride,
-            relu=True,
-            pool_mode=pool_mode,
-            pool_size=2,
-            pool_stride=2,
-        )
+        model, cfg, size, trained = self._lab_context()
+        x, true_label = self._lab_input_for(size)
+        self._lab_model = model
+        try:
+            trace = model.forward_trace(x[None, ...])
+        except Exception as exc:  # noqa: BLE001
+            trace = []
+            if hasattr(self.main, "toast"):
+                self.main.toast(f"El modelo no acepta la muestra ({exc}).", "warning")
+
+        self._lab_trace = trace
+        self.diagram.set_model(model)
+        self.diagram.set_image(x)
+        if trace:
+            self.diagram.set_activations(trace)
+
+        try:
+            if stage == "hidden":
+                self._lab_steps = self._build_hidden_frames(model, trace)
+            elif stage == "softmax":
+                self._lab_steps = self._build_softmax_frames(trace, true_label)
+            else:
+                self._lab_steps = self._build_conv_frames(model, x)
+        except Exception as exc:  # noqa: BLE001
+            self._lab_steps = []
+            if hasattr(self.main, "toast"):
+                self.main.toast(f"No se pudo calcular el laboratorio: {exc}", "warning")
+
+        sample = self._lab_sample
+        if sample is not None:
+            state = "" if trained else " · modelo sin entrenar"
+            self._lab_sample_label.setText(
+                f"Muestra: {sample.class_name} · {sample.path.name}{state}"
+            )
+        elif trained:
+            self._lab_sample_label.setText("Tensor del pipeline · modelo cargado")
+        else:
+            self._lab_sample_label.setText("Entrada sintética · modelo sin entrenar")
 
         n = len(self._lab_steps)
         self._lab_slider.blockSignals(True)
         self._lab_slider.setRange(0, max(0, n - 1))
         self._lab_slider.blockSignals(False)
-        self._show_lab_step(0)
+        if n:
+            self._show_lab_step(0)
+        else:
+            self._lab_step_label.setText("Paso 0 / 0")
+            self._lab_detail.setText("Carga un modelo o escanea el dataset para ver el cálculo real.")
+            self._lab_formula.setText("—")
+
+    def _build_conv_frames(self, model, x: np.ndarray) -> list[LabStep]:
+        convs = model.conv_layers()
+        if not convs:
+            raise ValueError("El modelo no tiene capas convolucionales")
+        weights = np.asarray(convs[0].W)
+        bias = np.asarray(convs[0].b)
+        filters = int(weights.shape[0])
+        if self.combo_filter.count() != filters:
+            self.combo_filter.blockSignals(True)
+            self.combo_filter.clear()
+            for i in range(filters):
+                self.combo_filter.addItem(f"Filtro {i + 1} de {filters}", i)
+            self.combo_filter.blockSignals(False)
+        k = max(0, min(filters - 1, int(self.combo_filter.currentIndex())))
+        kernel = weights[k, 0]
+        return conv1_frames(x, kernel, float(bias[k]), crop=8)
+
+    def _build_hidden_frames(self, model, trace: list[dict]) -> list[LabStep]:
+        layer = model.hidden_layer()
+        weights = np.asarray(layer.W)
+        bias = np.asarray(layer.b).ravel()
+        neurons = int(weights.shape[1])
+        self.spin_neuron.blockSignals(True)
+        self.spin_neuron.setMaximum(max(1, neurons))
+        self.spin_neuron.blockSignals(False)
+        neuron = max(0, min(neurons - 1, int(self.spin_neuron.value()) - 1))
+
+        flat = None
+        hidden_pos = None
+        for i, item in enumerate(trace):
+            if item.get("kind") == "HiddenLayer":
+                hidden_pos = i
+                break
+        if hidden_pos is not None and hidden_pos > 0:
+            flat = np.asarray(trace[hidden_pos - 1].get("array")).ravel()
+        if flat is None or flat.size != weights.shape[0]:
+            raise ValueError("No se pudo obtener el vector aplanado que entra a la capa oculta")
+        return hidden_frames(flat, weights[:, neuron], float(bias[neuron]), neuron, top_k=49)
+
+    def _build_softmax_frames(self, trace: list[dict], true_label: int | None) -> list[LabStep]:
+        logits = None
+        for item in reversed(trace):
+            if item.get("kind") == "HiddenLayer":
+                logits = np.asarray(item.get("array")).ravel()
+                break
+        if logits is None or logits.size < 2:
+            raise ValueError("No se encontraron los logits de la capa de salida")
+        labels = [CLASS_LABELS[c] for c in CLASSES]
+        return softmax_frames(logits, labels, true_label)
 
     def _show_lab_step(self, idx: int) -> None:
         if not self._lab_steps:
@@ -1059,12 +1258,17 @@ class ArchitecturePage(QWidget):
         if step.kernel is not None:
             self.mat_kernel.setVisible(True)
             self.lbl_kernel_title.setVisible(True)
+            self.lbl_kernel_title.setText(step.kernel_label or "Filtro 3×3")
             self.lbl_op1.setVisible(True)
+            self.lbl_op1.setText("⊛" if step.phase in ("conv", "") else "×")
+            self.lbl_op2.setVisible(True)
             self.mat_kernel.set_matrix(step.kernel, color=WARNING)
         else:
             self.mat_kernel.setVisible(False)
             self.lbl_kernel_title.setVisible(False)
-            self.lbl_op1.setVisible(False)
+            self.lbl_op1.setVisible(True)
+            self.lbl_op1.setText("→")
+            self.lbl_op2.setVisible(False)
 
         self.mat_target.set_matrix(step.target, highlight=step.target_highlight, color=SUCCESS)
 
@@ -1094,9 +1298,9 @@ class ArchitecturePage(QWidget):
         self.audit_btn.setText("Comprobando gradientes…")
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            from core.nn import Dense, ReLU
+            from core.nn import HiddenLayer, ReLU
             rng = np.random.default_rng(1234)
-            d = Dense(4, 2, rng=rng, dtype=np.float64)
+            d = HiddenLayer(4, 2, rng=rng, dtype=np.float64)
             x = rng.standard_normal((3, 4))
             dout = rng.standard_normal((3, 2))
             out = d.forward(x)
