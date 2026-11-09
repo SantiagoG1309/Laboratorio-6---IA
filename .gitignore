@@ -1,0 +1,25 @@
+# Entorno y cachés de Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Compilación
+build/
+dist/
+*.spec.bak
+
+# Salidas temporales de la aplicación
+Exportaciones/*
+!Exportaciones/.gitkeep
+*.log
+
+# Candidatos de entrenamiento (solo se versiona el modelo final)
+Modelos entrenados/*_candidato.npz
+Modelos entrenados/*_candidate.npz
+
+# Preferencias de editores y sistema
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

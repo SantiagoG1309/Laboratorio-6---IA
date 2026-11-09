@@ -1,0 +1,75 @@
+Dataset de ejemplo - Wikimedia Commons
+
+trucha/trucha_008_Alabal_k_-_Oncorhynchus_mykiss_01.JPG.jpg	Zeynel Cebeci	CC BY-SA 4.0	File:Alabalık - Oncorhynchus mykiss 01.JPG
+trucha/trucha_009_Alabal_k_-_Oncorhynchus_mykiss_02.JPG.jpg	Zeynel Cebeci	CC BY-SA 4.0	File:Alabalık - Oncorhynchus mykiss 02.JPG
+trucha/trucha_011_Additional_.jpg.jpg	Tillamook Treasury	CC BY-SA 4.0	File:Additional .jpg
+trucha/trucha_012_Beautiful_color_rainbow_trout_rocky_ford_-_panoramio.jpg.jpg	nick thornton	CC BY-SA 3.0	File:Beautiful color rainbow trout, rocky ford - panoramio.jpg
+trucha/trucha_013_Albino_Oncorhynchus_mykiss_-_Flickr_-_odako1.jpg.jpg	Koichi Oda	CC BY-SA 2.0	File:Albino Oncorhynchus mykiss - Flickr - odako1.jpg
+trucha/trucha_014_2009-365-190_Fish_Frenzy_3705756109_.jpg.jpg	cogdogblog	CC BY 2.0	File:2009-365-190 Fish Frenzy (3705756109).jpg
+trucha/trucha_015_Athabasca_Rainbow_Trout.jpg.jpg	Purefury182	CC BY-SA 4.0	File:Athabasca Rainbow Trout.jpg
+trucha/trucha_016_Beardslee_Trout_Sep_2017.jpg.jpg	Purefury182	CC BY-SA 4.0	File:Beardslee Trout, Sep 2017.jpg
+trucha/trucha_017_20180106_-_Truite_arc-en-ciel.jpg.jpg	Fabricio Cardenas	CC BY-SA 4.0	File:20180106 - Truite arc-en-ciel.jpg
+trucha/trucha_018_24-inch_steelhead_from_Maria_Ygnacio_Creek_in_Santa_Barbara_County_California._2.jpg	Pacific Southwest Region USFWS from Sacramento, US	Public domain	File:24-inch steelhead from Maria Ygnacio Creek in Santa Barbara County, California. (26808089447).jpg
+trucha/trucha_019_24-inch_steelhead_from_Maria_Ygnacio_Creek_in_Santa_Barbara_County_California._3.jpg	Pacific Southwest Region USFWS from Sacramento, US	Public domain	File:24-inch steelhead from Maria Ygnacio Creek in Santa Barbara County, California. (39868976440).jpg
+trucha/trucha_024_2018-07-25_Bastei_02.jpg.jpg	Meine Mutter (Erlaubnis liegt vor)	CC BY-SA 4.0	File:2018-07-25 Bastei 02.jpg
+trucha/trucha_025_2018-07-25_Bastei_03.jpg.jpg	Meine Mutter (Erlaubnis liegt vor)	CC BY-SA 4.0	File:2018-07-25 Bastei 03.jpg
+trucha/trucha_026_2018-07-25_Bastei_07.jpg.jpg	Meine Mutter (Erlaubnis liegt vor)	CC BY-SA 4.0	File:2018-07-25 Bastei 07.jpg
+trucha/trucha_027_2019-06-23_Badersee_Grainau_02.jpg.jpg	Geoprofi Lars	CC BY-SA 4.0	File:2019-06-23 Badersee Grainau 02.jpg
+trucha/trucha_028_6819_rainbow_trout_munsel_odfw_4277511228_.jpg.jpg	Oregon Department of Fish &amp; Wildlife	Public domain	File:6819 rainbow trout munsel odfw (4277511228).jpg
+trucha/trucha_029_6808_rainbow_trout_munsel_odfw_4277512118_.jpg.jpg	Oregon Department of Fish &amp; Wildlife	Public domain	File:6808 rainbow trout munsel odfw (4277512118).jpg
+trucha/trucha_030_6818_rainbow_trout_munsel_odfw_4277511008_.jpg.jpg	Oregon Department of Fish &amp; Wildlife	Public domain	File:6818 rainbow trout munsel odfw (4277511008).jpg
+trucha/trucha_031_6809_rainbow_trout_munsel_odfw_4277510516_.jpg.jpg	Oregon Department of Fish &amp; Wildlife	Public domain	File:6809 rainbow trout munsel odfw (4277510516).jpg
+mojarra/mojarra_001_Fresh_tilapia.jpg.jpg	Niall Crotty	CC BY-SA 2.5	File:Fresh tilapia.jpg
+mojarra/mojarra_002_Oreo_nilo_071011-0531_M_jtg.jpg.jpg	W.A. Djatmiko (Wie146)	CC BY-SA 3.0	File:Oreo nilo 071011-0531 M jtg.jpg
+mojarra/mojarra_008_Vatch_pla_nin.jpg.jpg	Takeaway	CC BY-SA 3.0	File:Vatch pla nin.jpg
+mojarra/mojarra_015_Oreochromis-niloticus-Nairobi.JPG.jpg	Bjørn Christian Tørrissen	CC BY-SA 3.0	File:Oreochromis-niloticus-Nairobi.JPG
+mojarra/mojarra_019_C_r_phi.jpg.jpg	Bùi Thụy Đào Nguyên	CC BY-SA 3.0	File:Cá rô phi.jpg
+mojarra/mojarra_021_Til_pia_ou_Sarotherodon_niloticus.jpg.jpg	Germano Roberto Schüür	CC BY-SA 4.0	File:Tilápia ou Sarotherodon niloticus.jpg
+mojarra/mojarra_022_Til_pia_ou_Sarotherodon_niloticus_2.jpg.jpg	Germano Roberto Schüür	CC BY-SA 4.0	File:Tilápia ou Sarotherodon niloticus 2.jpg
+mojarra/mojarra_026_Oreochromis_niloticus_44653802502_.jpg.jpg	Donald Hobern from Copenhagen, Denmark	CC BY 2.0	File:Oreochromis niloticus (44653802502).jpg
+mojarra/mojarra_027_Nile_Tilapia_Oreochromis_niloticus_-_Carwash_Cenote_QR.jpg.jpg	Bernard DUPONT	CC BY-SA 2.0	File:Nile Tilapia (Oreochromis niloticus) - Carwash Cenote QR.jpg
+mojarra/mojarra_035_Tilapia_003.jpg.jpg	Seydou221	CC BY-SA 4.0	File:Tilapia 003.jpg
+mojarra/mojarra_036_Tilapia_del_Nilo_Oreochromis_niloticus_cenote_El_Pit_Yucat_n_M_xico_2025-12-23_D.jpg	Diego Delso	CC BY-SA 4.0	File:Tilapia del Nilo (Oreochromis niloticus), cenote El Pit, Yucatán, México, 2025-12-23, DD 02.jpg
+pavon/pavon_001_Cichla_ocellaris_Dvur_zoo_1.jpg.jpg	Karelj	Public domain	File:Cichla ocellaris Dvur zoo 1.jpg
+pavon/pavon_002_Cichla_ocellaris_Dvur_zoo_2.jpg.jpg	Karelj	Public domain	File:Cichla ocellaris Dvur zoo 2.jpg
+pavon/pavon_003_Cichla_ocellaris_Dvur_zoo_3.jpg.jpg	Karelj	Public domain	File:Cichla ocellaris Dvur zoo 3.jpg
+pavon/pavon_005_Cichla_ocellaris.jpg.jpg	Petruss	CC BY-SA 4.0	File:Cichla ocellaris.jpg
+pavon/pavon_006_Cichla_ocellaris_Gdynia_okon_pawi_.jpg.jpg	MOs810	CC BY-SA 4.0	File:Cichla ocellaris Gdynia (okon pawi).jpg
+pavon/pavon_007_Two_species_of_peacockbass.jpg.jpg	Dr. Fantini	CC BY-SA 4.0	File:Two species of peacockbass.jpg
+pavon/pavon_008_Cichla_ocellaris_185311182.jpg.jpg	Ong Jyh Seng	CC BY-SA 4.0	File:Cichla ocellaris 185311182.jpg
+pavon/pavon_009_Cichla_ocellaris_57138663.jpg.jpg	Matthew Pintar	CC BY 4.0	File:Cichla ocellaris 57138663.jpg
+pavon/pavon_010_Cichla_ocellaris_Dvur_zoo_1_cropped_.jpg.jpg	Karelj	Public domain	File:Cichla ocellaris Dvur zoo 1 (cropped).jpg
+pavon/pavon_011_Cichlaocellaris_modder.jpg.jpg	Theo Modder	CC BY 4.0	File:Cichlaocellaris modder.jpg
+pavon/pavon_012_Cichlidae_Cichla_temensis_5807042158_.jpg.jpg	Clinton &amp; Charles Robertson from RAF Lakenheath, UK &amp; San Marcos, TX, USA &amp; UK	CC BY 2.0	File:Cichlidae Cichla temensis (5807042158).jpg
+pavon/pavon_013_Pesca_Esportiva_na_Amaz_nia_3.JPG.jpg	Wellerson Santana	CC BY-SA 4.0	File:Pesca Esportiva na Amazônia 3.JPG
+pavon/pavon_014_Pesca_Esportiva_na_Amaz_nia_4.JPG.jpg	Wellerson Santana	CC BY-SA 4.0	File:Pesca Esportiva na Amazônia 4.JPG
+pavon/pavon_015_Pesca_Esportiva_na_Amaz_nia_14.JPG.jpg	Wellerson Santana	CC BY-SA 4.0	File:Pesca Esportiva na Amazônia 14.JPG
+pavon/pavon_016_Pesca_Esportiva_na_Amaz_nia_20.JPG.jpg	Wellerson Santana	CC BY-SA 4.0	File:Pesca Esportiva na Amazônia 20.JPG
+pavon/pavon_019_Cichla_Temensis_from_Cinaruco1.jpg.jpg	SimonovichF	CC BY-SA 4.0	File:Cichla Temensis from Cinaruco1.jpg
+pavon/pavon_020_Cichlidae_Cichla_temensis_3.jpg.jpg	NasserHalaweh	CC BY-SA 4.0	File:Cichlidae Cichla temensis 3.jpg
+pavon/pavon_021_Laurent_com_tucunare.jpg.jpg	Dr. Fantini	CC BY-SA 4.0	File:Laurent com tucunare.jpg
+pavon/pavon_022_Cichla_temensis_179491481.jpg.jpg	Diogo Luiz	CC BY-SA 4.0	File:Cichla temensis 179491481.jpg
+pavon/pavon_023_Cichla_temensis_179491250.jpg.jpg	Diogo Luiz	CC BY-SA 4.0	File:Cichla temensis 179491250.jpg
+pavon/pavon_024_Cichla_Temensis_from_Cinaruco1_cropped_.jpg.jpg	SimonovichF	CC BY-SA 4.0	File:Cichla Temensis from Cinaruco1 (cropped).jpg
+pavon/pavon_029_Aquarium_Paradise_Bangalore_2025_45.jpg.jpg	Gpkp	CC BY-SA 4.0	File:Aquarium Paradise, Bangalore (2025) 45.jpg
+pavon/pavon_030_ButterflyPeacockBass_01.jpg.jpg	LuisGomez111 at English Wikipedia	CC BY-SA 3.0	File:ButterflyPeacockBass 01.jpg
+pavon/pavon_031_Orinoco_peacock_bass_Cichla_orinocensis_.jpg.jpg	JSutton93	CC BY-SA 4.0	File:Orinoco peacock bass (Cichla orinocensis).jpg
+
+trucha/trucha_001_3_Regenbogner.png.png	THWZ	CC BY-SA 3.0	File:3 Regenbogner.png
+trucha/trucha_026_Bull_Trout_26168684262_.jpg.jpg	Bob Henricks	CC BY-SA 2.0	File:Bull Trout (26168684262).jpg
+trucha/trucha_028_Brook_trout_at_New_England_Aquarium_08.jpg.jpg	Montanabw	CC BY-SA 4.0	File:Brook trout at New England Aquarium 08.jpg
+trucha/trucha_029_Brook_trout_at_New_England_Aquarium_09.jpg.jpg	Montanabw	CC BY-SA 4.0	File:Brook trout at New England Aquarium 09.jpg
+trucha/trucha_030_Brook_trout_at_New_England_Aquarium_13.jpg.jpg	Montanabw	CC BY-SA 4.0	File:Brook trout at New England Aquarium 13.jpg
+trucha/trucha_031_Brook_trout_at_New_England_Aquarium_12.jpg.jpg	Montanabw	CC BY-SA 4.0	File:Brook trout at New England Aquarium 12.jpg
+trucha/trucha_032_Baiersbronn_Klosterreichenbach_-_Schwimmbadweg_-_Neuer_Kurpark_11_ies.jpg.jpg	Frank Vincentz	CC BY-SA 3.0	File:Baiersbronn Klosterreichenbach - Schwimmbadweg - Neuer Kurpark 11 ies.jpg
+trucha/trucha_034_Beauty_of_nature_afb-V.jpg.jpg	Roman Raghu Shrestha	CC BY-SA 4.0	File:Beauty of nature afb-V.jpg
+mojarra/mojarra_016_Oreochromis_mossambicus_juveniles.jpg.jpg	T.Voekler	CC BY-SA 3.0	File:Oreochromis mossambicus juveniles.jpg
+mojarra/mojarra_017_Oreochromis_mossambicus.jpg.jpg	Destinationkho	CC BY-SA 3.0	File:Oreochromis mossambicus.jpg
+mojarra/mojarra_018_Tilapia_mossambica_Pune.JPG.jpg	AshLin	CC BY-SA 3.0	File:Tilapia mossambica Pune.JPG
+mojarra/mojarra_019_Oreochromis_mossambicus.JPG.jpg	Greg Hume	CC BY-SA 3.0	File:Oreochromis mossambicus.JPG
+mojarra/mojarra_020_Red_Sea_Aquarium_by_Hatem_Moushir_6.JPG.jpg	Hatem Moushir	CC BY-SA 4.0	File:Red Sea Aquarium by Hatem Moushir 6.JPG
+mojarra/mojarra_023_Oreochromis_mossambicus_wateropgaringstuin_Manie_van_der_Schijff_BT_a.jpg.jpg	JMK	CC BY-SA 4.0	File:Oreochromis mossambicus, wateropgaringstuin, Manie van der Schijff BT, a.jpg
+mojarra/mojarra_025_Oreochromis_mossambicus_cropped_.JPG.jpg	Greg Hume	CC BY-SA 3.0	File:Oreochromis mossambicus (cropped).JPG
+mojarra/mojarra_027_Mozambique_Tilapias_Oreochromis_mossambicus_52793315784_.jpg.jpg	Bernard DUPONT	CC BY-SA 2.0	File:Mozambique Tilapias (Oreochromis mossambicus) (52793315784).jpg
+pavon/pavon_029_Specked_Peacock_Bass_from_Cinaruco_River_2.jpg.jpg	SimonovichF	CC BY-SA 4.0	File:Specked Peacock Bass from Cinaruco River 2.jpg
+pavon/pavon_033_Cichlidae_Cichla_cf_monoculus_5806477931_.jpg.jpg	Clinton & Charles Robertson	CC BY 2.0	File:Cichlidae Cichla cf monoculus (5806477931).jpg

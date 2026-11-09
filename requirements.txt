@@ -1,0 +1,10 @@
+# AquaCNN · Laboratorio 6 — dependencias de ejecución
+# Instalación:  python -m pip install -r requirements.txt
+PySide6==6.12.0
+numpy==2.5.4
+opencv-python==5.0.0.93
+matplotlib==3.11.2
+openpyxl==3.1.5
+
+# Para generar el ejecutable (opcional):
+# pyinstaller==6.22.3
