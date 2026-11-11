@@ -89,20 +89,36 @@ class HistogramCanvas(MplCanvas):
         self.ax.clear()
         _style_axes(self.ax)
         x = np.arange(256)
+        curves: list[np.ndarray] = []
         if before is not None and len(before) >= 256:
-            self.ax.fill_between(x, before[:256], color=mix(SURFACE, ACCENT, 0.22), alpha=0.55, linewidth=0)
-            self.ax.plot(x, before[:256], color=mix(MUTED, ACCENT, 0.35), linewidth=1.0, alpha=0.8, label="Original")
+            b = np.asarray(before[:256], dtype=float)
+            total = float(b.sum()) or 1.0
+            b = b / total
+            curves.append(b)
+            self.ax.fill_between(x, b, color=mix(SURFACE, ACCENT, 0.22), alpha=0.55, linewidth=0)
+            self.ax.plot(x, b, color=mix(MUTED, ACCENT, 0.35), linewidth=1.0, alpha=0.85, label="Original")
         if after is not None and len(after) >= 256:
-            self.ax.plot(x, after[:256], color=ACCENT, linewidth=1.3, label="Procesado")
+            a = np.asarray(after[:256], dtype=float)
+            total = float(a.sum()) or 1.0
+            a = a / total
+            curves.append(a)
+            self.ax.plot(x, a, color=ACCENT, linewidth=1.35, label="Procesado")
+        if curves:
+            # La ecualización aplana el histograma: se recorta el eje Y al
+            # percentil 99 para que ambas curvas sigan siendo comparables.
+            peak = max(float(np.percentile(c, 99)) for c in curves)
+            top = max(peak * 1.25, 1e-4)
+            self.ax.set_ylim(0, top)
         self.ax.set_xlim(0, 255)
         self.ax.set_xlabel("Intensidad de píxel")
-        self.ax.set_ylabel("Frecuencia")
+        self.ax.set_ylabel("Frecuencia relativa")
         title = "Histograma de intensidad"
         if equalization:
             short = equalization.split("(")[0].strip()
             title = f"Histograma · {short}"
         self.ax.set_title(title, fontsize=9, loc="left")
-        self.ax.legend(loc="upper right", fontsize=7, frameon=False, labelcolor=MUTED)
+        if curves:
+            self.ax.legend(loc="upper right", fontsize=7, frameon=False, labelcolor=MUTED)
         self.figure.tight_layout()
         self.draw_idle()
 
@@ -147,13 +163,15 @@ class TrainingChart(MplCanvas):
         _style_axes(self.ax_acc)
         self.ax_loss.plot(epochs, loss, color=ACCENT, linewidth=1.6, label="Entrenamiento")
         if val_loss and len(val_loss) == len(loss):
-            self.ax_loss.plot(epochs, val_loss, color=WARNING, linewidth=1.4, label="Validación")
+            self.ax_loss.plot(epochs, val_loss, color=WARNING, linewidth=1.4,
+                              marker="o", markersize=2.5, label="Validación (instantáneas)")
         self.ax_loss.set_title("Pérdida (entropía cruzada)", fontsize=9, loc="left")
         self.ax_loss.set_ylabel("Loss")
         self.ax_loss.legend(loc="upper right", fontsize=7, frameon=False, labelcolor=MUTED)
         self.ax_acc.plot(epochs, np.array(acc) * 100, color=SUCCESS, linewidth=1.6, label="Entrenamiento")
         if val_acc and len(val_acc) == len(loss):
-            self.ax_acc.plot(epochs, np.array(val_acc) * 100, color=PURPLE, linewidth=1.4, label="Validación")
+            self.ax_acc.plot(epochs, np.array(val_acc) * 100, color=PURPLE, linewidth=1.4,
+                             marker="o", markersize=2.5, label="Validación (instantáneas)")
         self.ax_acc.set_title("Exactitud por época", fontsize=9, loc="left")
         self.ax_acc.set_ylabel("Accuracy (%)")
         self.ax_acc.set_xlabel("Época")

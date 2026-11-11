@@ -234,17 +234,22 @@ def analyze_image(path: str | Path, cfg: PipelineConfig) -> PipelineResult:
     t = time.perf_counter()
     gray_full = ops.to_gray(converted)
     hist_before = ops.histogram(gray_full)
-    if cfg.enhance_enabled:
-        processed_u8 = ops.equalize_rgb(converted, cfg.equalization)
+    applied = cfg.enhance_enabled and cfg.equalization in ("hist", "clahe")
+    if applied and cfg.equalization == "clahe":
+        processed_u8 = ops.equalize_rgb(converted, "clahe", cfg.clahe_clip, cfg.clahe_tiles)
         enhance_detail = (
-            "Ecualización de histograma por canal"
-            if cfg.equalization == "hist"
-            else "Sin mejora"
+            f"CLAHE sobre luminancia · clip {cfg.clahe_clip:.1f} · rejilla "
+            f"{cfg.clahe_tiles}×{cfg.clahe_tiles}"
         )
+    elif applied:
+        processed_u8 = ops.equalize_rgb(converted, "hist")
+        enhance_detail = "Ecualización de histograma por canal"
     else:
         processed_u8 = np.clip(converted, 0, 255).astype(np.uint8)
-        enhance_detail = "Etapa desactivada: sin ecualización"
+        enhance_detail = "Etapa desactivada: sin mejora de contraste"
     hist_after = ops.histogram(ops.to_gray(processed_u8))
+    if cfg.enhance_enabled and cfg.equalization == "none":
+        enhance_detail = "Sin mejora: se conserva el contraste original"
     timings["mejora"] = (time.perf_counter() - t) * 1000
     add_stage("enhance", cfg.enhance_enabled, processed_u8, enhance_detail, timings["mejora"])
 
@@ -332,8 +337,8 @@ def analyze_image(path: str | Path, cfg: PipelineConfig) -> PipelineResult:
     t = time.perf_counter()
     net_size = max(16, int(cfg.net_input_size))
     net_rgb = ops.resize_with_pad(roi_rgb, net_size)
-    if cfg.enhance_enabled and cfg.equalization == "hist":
-        net_rgb = ops.equalize_rgb(net_rgb, "hist")
+    if cfg.enhance_enabled and cfg.equalization in ("hist", "clahe"):
+        net_rgb = ops.equalize_rgb(net_rgb, cfg.equalization, cfg.clahe_clip, cfg.clahe_tiles)
     net_input = np.transpose(
         ops.normalize01(net_rgb).astype(np.float32), (2, 0, 1)
     )
@@ -385,20 +390,22 @@ def preprocess_for_training(
     equalization: str = "hist",
     roi: bool = False,
     roi_margin: float = 0.15,
+    clahe_clip: float = 2.0,
+    clahe_tiles: int = 8,
 ) -> np.ndarray:
     """Carga y preprocesa una imagen para la red neuronal.
 
     Misma secuencia que el pipeline visible: lectura RGB → segmentación Otsu
     (opcional) → redimensionado con relleno conservando la proporción →
-    ecualización de histograma (opcional) → normalización. Devuelve un arreglo
+    mejora de contraste (opcional) → normalización. Devuelve un arreglo
     float32 (3, size, size) en [0, 1]: la CNN trabaja siempre en color.
     """
     rgb = ops.imread_rgb(path)
     if roi:
         rgb, _ = ops.segment_fish_roi(rgb, roi_margin)
     rgb = ops.resize_with_pad(rgb, size)
-    if equalization == "hist":
-        rgb = ops.equalize_rgb(rgb, "hist")
+    if equalization in ("hist", "clahe"):
+        rgb = ops.equalize_rgb(rgb, equalization, clahe_clip, clahe_tiles)
     return np.transpose(ops.normalize01(rgb).astype(np.float32), (2, 0, 1))
 
 

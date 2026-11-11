@@ -1097,14 +1097,17 @@ class ArchitecturePage(QWidget):
             explorer = getattr(self.main, "explorer", None)
             pcfg = getattr(explorer, "cfg", None)
             eq = getattr(pcfg, "equalization", "hist")
+            clip = float(getattr(pcfg, "clahe_clip", 2.0))
+            tiles = int(getattr(pcfg, "clahe_tiles", 8))
             roi = bool(getattr(pcfg, "roi_enabled", False))
             margin = float(getattr(pcfg, "roi_margin", 0.15))
-            key = (str(sample.path), size, eq, roi, margin)
+            key = (str(sample.path), size, eq, clip, tiles, roi, margin)
             if getattr(self, "_lab_input_key", None) == key and self._lab_input is not None:
                 return self._lab_input, int(sample.label)
             try:
                 arr = preprocess_for_training(
-                    sample.path, size, eq, roi=roi, roi_margin=margin
+                    sample.path, size, eq, roi=roi, roi_margin=margin,
+                    clahe_clip=clip, clahe_tiles=tiles,
                 )
                 self._lab_input = arr
                 self._lab_input_key = key

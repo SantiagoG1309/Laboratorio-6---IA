@@ -248,9 +248,36 @@ class TrainingPage(QWidget):
             self.equal_combo.addItem(label, key)
         self.equal_combo.setCurrentIndex(1)
         self.equal_combo.setToolTip(
-            "Mejora de contraste aplicada a cada imagen: sin mejora o ecualización global del histograma."
+            "Mejora de contraste aplicada a cada imagen: sin mejora, ecualización global del "
+            "histograma por canal o CLAHE (contraste local con clip y rejilla)."
         )
         train_card.body().addLayout(self._combo("Mejora de contraste", self.equal_combo))
+        clahe_row = QHBoxLayout()
+        clahe_row.setSpacing(8)
+        self.clahe_clip = QDoubleSpinBox()
+        self.clahe_clip.setRange(0.5, 8.0)
+        self.clahe_clip.setSingleStep(0.5)
+        self.clahe_clip.setDecimals(1)
+        self.clahe_clip.setValue(2.0)
+        self.clahe_clip.setToolTip(
+            "CLAHE · límite de contraste: valores altos realzan más el detalle local y también el ruido."
+        )
+        self.clahe_tiles = QSpinBox()
+        self.clahe_tiles.setRange(2, 16)
+        self.clahe_tiles.setSingleStep(2)
+        self.clahe_tiles.setValue(8)
+        self.clahe_tiles.setToolTip(
+            "CLAHE · rejilla N×N: rejillas pequeñas dan un contraste más local; grandes se acercan al global."
+        )
+        clahe_row.addLayout(self._combo("Clip CLAHE", self.clahe_clip))
+        clahe_row.addLayout(self._combo("Rejilla", self.clahe_tiles))
+        train_card.body().addLayout(clahe_row)
+        self.clahe_hint = QLabel("CLAHE aplica el contraste local sobre la luminancia (LAB) sin alterar el tono.")
+        self.clahe_hint.setProperty("subtle", True)
+        self.clahe_hint.setWordWrap(True)
+        self.clahe_hint.setStyleSheet("font-size: 9.5px;")
+        train_card.body().addWidget(self.clahe_hint)
+        self._sync_clahe_controls()
         cl.addWidget(train_card)
 
         actions = Card(padding=14, spacing=8)
@@ -318,14 +345,19 @@ class TrainingPage(QWidget):
         self.chip_acc = MetricChip("Accuracy", "—", SUCCESS)
         self.chip_vacc = MetricChip("Val accuracy", "—", ACCENT)
         self.chip_eta = MetricChip("ETA", "—", PURPLE)
-        for c in (self.chip_epoch, self.chip_loss, self.chip_vloss, self.chip_acc, self.chip_vacc, self.chip_eta):
+        self.chip_phase = MetricChip("Fase", "—", ACCENT_2)
+        for c in (self.chip_epoch, self.chip_loss, self.chip_vloss, self.chip_acc,
+                  self.chip_vacc, self.chip_eta, self.chip_phase):
             chips.addWidget(c, 1)
         self.chip_epoch.setToolTip("Época actual y total configurado.")
         self.chip_loss.setToolTip("Pérdida de entrenamiento (entropía cruzada); debe bajar y estabilizarse.")
-        self.chip_vloss.setToolTip("Pérdida de validación; si sube mientras la de entrenamiento baja, hay sobreajuste.")
+        self.chip_vloss.setToolTip("Pérdida de validación. Se calcula al terminar el entrenamiento.")
         self.chip_acc.setToolTip("Exactitud sobre las imágenes de entrenamiento.")
-        self.chip_vacc.setToolTip("Exactitud sobre validación: la señal más útil para elegir la mejor época.")
+        self.chip_vacc.setToolTip("Exactitud sobre validación. Se calcula en la fase 2, después de entrenar.")
         self.chip_eta.setToolTip("Tiempo estimado restante para terminar el entrenamiento.")
+        self.chip_phase.setToolTip(
+            "Fase actual: 1) entrenamiento, 2) validación y 3) prueba. Siempre en ese orden."
+        )
         ml.addLayout(chips)
 
         chart_card = Card(padding=12, spacing=6)
@@ -379,6 +411,9 @@ class TrainingPage(QWidget):
         for dspin in (self.lr_spin, self.momentum_spin, self.wd_spin):
             dspin.valueChanged.connect(self._emit_config)
         self.equal_combo.currentIndexChanged.connect(self._emit_config)
+        self.equal_combo.currentIndexChanged.connect(self._sync_clahe_controls)
+        self.clahe_clip.valueChanged.connect(self._emit_config)
+        self.clahe_tiles.valueChanged.connect(self._emit_config)
         for toggle in (self.aug_toggle, self.weights_toggle, self.roi_toggle):
             toggle._switch.toggled.connect(self._emit_config)  # type: ignore[attr-defined]
         self._apply_config(self.main.training_cfg)
@@ -389,6 +424,7 @@ class TrainingPage(QWidget):
             self.input_combo, self.hidden_spin, self.f1_spin, self.f2_spin,
             self.epochs_spin, self.batch_spin, self.seed_spin,
             self.lr_spin, self.momentum_spin, self.wd_spin, self.equal_combo,
+            self.clahe_clip, self.clahe_tiles,
         )
         for w in widgets:
             w.blockSignals(True)
@@ -408,12 +444,15 @@ class TrainingPage(QWidget):
             idx = self.equal_combo.findData(cfg.equalization)
             if idx >= 0:
                 self.equal_combo.setCurrentIndex(idx)
+            self.clahe_clip.setValue(float(cfg.clahe_clip))
+            self.clahe_tiles.setValue(int(cfg.clahe_tiles))
             self.aug_toggle._switch.setChecked(bool(cfg.augmentation))  # type: ignore[attr-defined]
             self.weights_toggle._switch.setChecked(bool(cfg.class_weights))  # type: ignore[attr-defined]
             self.roi_toggle._switch.setChecked(bool(cfg.roi_crop))  # type: ignore[attr-defined]
         finally:
             for w in widgets:
                 w.blockSignals(False)
+        self._sync_clahe_controls()
 
     # ------------------------------------------------------------------
     def _emit_config(self, *_args) -> None:
@@ -452,6 +491,12 @@ class TrainingPage(QWidget):
         )
         self.configChanged.emit(self._config())
 
+    def _sync_clahe_controls(self) -> None:
+        """Muestra los ajustes de CLAHE solo cuando ese método está activo."""
+        active = self.equal_combo.currentData() == "clahe"
+        for widget in (self.clahe_clip, self.clahe_tiles, self.clahe_hint):
+            widget.setVisible(active)
+
     def _config(self) -> TrainingConfig:
         return TrainingConfig(
             model_type="cnn",
@@ -470,6 +515,8 @@ class TrainingPage(QWidget):
             roi_margin=float(self.main.pipeline_cfg.roi_margin),
             seed=self.seed_spin.value(),
             equalization=self.equal_combo.currentData(),
+            clahe_clip=float(self.clahe_clip.value()),
+            clahe_tiles=int(self.clahe_tiles.value()),
             train_ratio=self.main.training_cfg.train_ratio,
             val_ratio=self.main.training_cfg.val_ratio,
             test_ratio=self.main.training_cfg.test_ratio,
@@ -566,6 +613,7 @@ class TrainingPage(QWidget):
         self.thread.log.connect(self._log)
         self.thread.epoch.connect(self.on_epoch)
         self.thread.batch.connect(self.on_batch)
+        self.thread.phase.connect(self.on_phase)
         self.thread.done.connect(self.on_done)
         self.thread.failed.connect(self.on_failed)
         self.thread.start()
@@ -583,26 +631,74 @@ class TrainingPage(QWidget):
         self.progress.setFormat(f"Época {epoch}/{total_epochs} · batch {batch}/{total} · loss {loss:.4f}")
 
     def on_epoch(self, info: dict) -> None:
-        for key in ("loss", "accuracy", "val_loss", "val_accuracy", "lr"):
+        for key in ("loss", "accuracy"):
             self.history[key].append(float(info.get(key, 0.0)))
+        for key in ("val_loss", "val_accuracy"):
+            value = info.get(key)
+            self.history[key].append(float("nan") if value is None else float(value))
+        self.history["lr"].append(float(info.get("lr", 0.0)))
         epoch = int(info.get("epoch", len(self.history["loss"])))
         epochs = int(info.get("epochs", self._active_epochs or epoch or 1))
         loss = float(info.get("loss", 0.0))
-        val_loss = float(info.get("val_loss", 0.0))
+        val_loss = info.get("val_loss")
         acc = float(info.get("accuracy", 0.0))
-        val_acc = float(info.get("val_accuracy", 0.0))
+        val_acc = info.get("val_accuracy")
         self.chart.update_history(self.history, int(info.get("best_epoch", 0)))
         self.chip_epoch.set_value(f"{epoch} / {epochs}")
         self.chip_loss.set_value(f"{loss:.4f}")
-        self.chip_vloss.set_value(f"{val_loss:.4f}")
+        self.chip_vloss.set_value("—" if val_loss is None else f"{float(val_loss):.4f}")
         self.chip_acc.set_value(f"{acc * 100:.1f}%")
-        self.chip_vacc.set_value(f"{val_acc * 100:.1f}%")
+        self.chip_vacc.set_value("—" if val_acc is None else f"{float(val_acc) * 100:.1f}%")
+        self.chip_phase.set_value("Entrenamiento")
         eta = float(info.get("eta", 0.0))
         self.chip_eta.set_value(f"{int(eta)}s" if eta < 120 else f"{eta / 60:.1f}m")
         self.progress.setValue(int(epoch / max(1, epochs) * 100))
         self.progress.setFormat(
-            f"Época {epoch}/{epochs} · acc {acc * 100:.1f}% · val_acc {val_acc * 100:.1f}%"
+            f"Fase 1/3 · Entrenamiento · época {epoch}/{epochs} · acc {acc * 100:.1f}%"
         )
+
+    def on_phase(self, info: dict) -> None:
+        """Refleja el orden estricto entrenamiento → validación → prueba."""
+        phase = str(info.get("phase", ""))
+        status = str(info.get("status", ""))
+        names = {"train": "Entrenamiento", "val": "Validación", "test": "Prueba"}
+        if phase in names:
+            self.chip_phase.set_value(names[phase])
+        if phase == "val" and status == "progress":
+            epoch = int(info.get("epoch", 0))
+            value = float(info.get("val_accuracy", 0.0))
+            loss = float(info.get("val_loss", 0.0))
+            if 0 < epoch <= len(self.history["val_accuracy"]):
+                self.history["val_loss"][epoch - 1] = loss
+                self.history["val_accuracy"][epoch - 1] = value
+            self.chart.update_history(self.history, int(info.get("best_epoch", 0)))
+            self.chip_vloss.set_value(f"{loss:.4f}")
+            self.chip_vacc.set_value(f"{value * 100:.1f}%")
+            done = int(info.get("done", 0))
+            total = max(1, int(info.get("total", 1)))
+            self.progress.setValue(int(done / total * 100))
+            self.progress.setFormat(
+                f"Fase 2/3 · Validación · instantánea {done}/{total} · val_acc {value * 100:.1f}%"
+            )
+        elif phase == "val" and status == "start":
+            self.chip_vloss.set_value("…")
+            self.chip_vacc.set_value("…")
+            self.progress.setValue(0)
+            self.progress.setFormat("Fase 2/3 · Validación de las instantáneas guardadas…")
+        elif phase == "val" and status == "end":
+            best = float(info.get("best_val_accuracy", 0.0))
+            self.chip_vacc.set_value(f"{best * 100:.1f}%")
+            self.progress.setValue(100)
+            self.progress.setFormat(f"Fase 2/3 · Validación completada · val_acc {best * 100:.1f}%")
+        elif phase == "test" and status == "start":
+            self.progress.setValue(0)
+            self.progress.setFormat("Fase 3/3 · Evaluando el conjunto de prueba…")
+        elif phase == "test" and status == "end":
+            acc = float(info.get("accuracy", 0.0))
+            self.progress.setValue(100)
+            self.progress.setFormat(f"Fase 3/3 · Prueba completada · test accuracy {acc * 100:.2f}%")
+        if status == "start":
+            self._log(f"Inicio de fase: {names.get(phase, phase)}")
 
     def on_done(self, result) -> None:
         self.main.training_result = result

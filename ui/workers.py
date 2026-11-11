@@ -86,6 +86,7 @@ class TrainingThread(QThread):
     log = Signal(str)
     epoch = Signal(dict)
     batch = Signal(int, int, int, float)
+    phase = Signal(dict)
     done = Signal(object)
     failed = Signal(str)
 
@@ -118,6 +119,7 @@ class TrainingThread(QThread):
                 on_batch=lambda e, b, t, loss: self.batch.emit(e, b, t, loss),
                 on_log=lambda msg: self.log.emit(msg),
                 should_stop=self._stop.is_set,
+                on_phase=lambda info: self.phase.emit(info),
             )
             self.done.emit(result)
         except Exception as exc:  # noqa: BLE001

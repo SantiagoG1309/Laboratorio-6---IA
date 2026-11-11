@@ -1,11 +1,10 @@
 """Entrenamiento, evaluación y predicción de los clasificadores neuronales."""
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
-from typing import Callable
-
-import math
+from typing import Any, Callable
 
 import cv2
 import numpy as np
@@ -61,6 +60,8 @@ def load_split_arrays(
                 equalization=cfg.equalization,
                 roi=cfg.roi_crop,
                 roi_margin=cfg.roi_margin,
+                clahe_clip=cfg.clahe_clip,
+                clahe_tiles=cfg.clahe_tiles,
             )
             X[len(kept)] = img
             y[len(kept)] = s.label
@@ -156,6 +157,7 @@ def train_model(
     on_batch: Callable[[int, int, int, float], None] | None = None,
     on_log: Callable[[str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    on_phase: Callable[[dict], None] | None = None,
 ) -> TrainingResult:
     t0 = time.perf_counter()
     log = on_log or (lambda _s: None)
@@ -187,6 +189,20 @@ def train_model(
     batch = max(1, int(cfg.batch_size))
     steps = max(1, int(np.ceil(n / batch)))
 
+    def notify_phase(payload: dict[str, Any]) -> None:
+        if on_phase:
+            on_phase(payload)
+
+    # Se guardan instantáneas durante el entrenamiento y la validación se hace
+    # SOLO al terminar: primero entrenar, después validar y al final probar.
+    # Se conservan hasta ~120 instantáneas para elegir la mejor época con la
+    # misma calidad que una validación por época, pero sin tocarla durante el
+    # entrenamiento.
+    checkpoint_every = max(1, int(math.ceil(cfg.epochs / 120)))
+    checkpoints: list[tuple[int, list[np.ndarray]]] = []
+
+    notify_phase({"phase": "train", "status": "start", "epochs": cfg.epochs, "total": n})
+    log(f"Fase 1/3 · Entrenamiento ({cfg.epochs} épocas, {n} imágenes)")
     for epoch in range(1, cfg.epochs + 1):
         if should_stop and should_stop():
             stopped = True
@@ -214,22 +230,19 @@ def train_model(
         else:
             acc_idx = rng.choice(n, 768, replace=False)
         _, train_acc, _ = _evaluate(model, Xtr[acc_idx], ytr[acc_idx])
-        val_loss, val_acc, _ = _evaluate(model, Xva, yva) if len(yva) else (0.0, 0.0, np.zeros((0, 3)))
         history["loss"].append(train_loss)
         history["accuracy"].append(train_acc)
-        history["val_loss"].append(val_loss)
-        history["val_accuracy"].append(val_acc)
+        # La validación todavía no se ejecutó: se rellena al terminar la fase 1.
+        history["val_loss"].append(float("nan"))
+        history["val_accuracy"].append(float("nan"))
         history["lr"].append(opt.lr)
-        # Decaimiento coseno: pasos grandes al principio y finos al final, lo
-        # que reduce la oscilación de la exactitud de validación.
+        # Decaimiento coseno: pasos grandes al principio y finos al final.
         if cfg.epochs > 1:
             frac = epoch / cfg.epochs
             opt.lr = float(cfg.learning_rate * (0.05 + 0.95 * 0.5 * (1.0 + math.cos(math.pi * frac))))
 
-        if len(yva) and val_acc > best_acc:
-            best_acc = val_acc
-            best_epoch = epoch
-            best_state = [p.copy() for _, p in model.params()]
+        if epoch % checkpoint_every == 0 or epoch == cfg.epochs:
+            checkpoints.append((epoch, [p.copy() for _, p in model.params()]))
 
         elapsed = time.perf_counter() - t0
         eta = elapsed / epoch * (cfg.epochs - epoch)
@@ -238,24 +251,53 @@ def train_model(
             "epochs": cfg.epochs,
             "loss": train_loss,
             "accuracy": train_acc,
-            "val_loss": val_loss,
-            "val_accuracy": val_acc,
+            "val_loss": None,
+            "val_accuracy": None,
             "elapsed": elapsed,
             "eta": eta,
             "lr": opt.lr,
-            "best_epoch": best_epoch,
-            "best_val_accuracy": max(best_acc, 0.0),
+            "best_epoch": 0,
+            "best_val_accuracy": 0.0,
         }
         log(
             f"Época {epoch:02d}/{cfg.epochs:02d} · loss {train_loss:.4f} · acc {train_acc * 100:5.1f}%"
-            f" · val_loss {val_loss:.4f} · val_acc {val_acc * 100:5.1f}%"
         )
         if on_epoch:
             on_epoch(info)
 
-    if best_state is not None:
-        for (_, p), saved in zip(model.params(), best_state):
-            p[...] = saved
+    # ---- Fase 2: validación (después del entrenamiento) ----------------
+    if len(yva):
+        notify_phase({"phase": "val", "status": "start", "total": len(checkpoints)})
+        log(f"Fase 2/3 · Validación sobre {len(yva)} imágenes ({len(checkpoints)} instantáneas)")
+        for pos, (epoch, state) in enumerate(checkpoints, start=1):
+            for (_, p), saved in zip(model.params(), state):
+                p[...] = saved
+            val_loss, val_acc, _ = _evaluate(model, Xva, yva)
+            history["val_loss"][epoch - 1] = val_loss
+            history["val_accuracy"][epoch - 1] = val_acc
+            if val_acc > best_acc:
+                best_acc = val_acc
+                best_epoch = epoch
+                best_state = [p.copy() for p in state]
+            notify_phase({
+                "phase": "val", "status": "progress", "done": pos, "total": len(checkpoints),
+                "epoch": epoch, "val_loss": val_loss, "val_accuracy": val_acc,
+                "best_epoch": best_epoch, "best_val_accuracy": max(best_acc, 0.0),
+            })
+            log(
+                f"  instantánea época {epoch:02d} · val_loss {val_loss:.4f} "
+                f"· val_acc {val_acc * 100:5.1f}%"
+            )
+        if best_state is not None:
+            for (_, p), saved in zip(model.params(), best_state):
+                p[...] = saved
+        notify_phase({
+            "phase": "val", "status": "end", "best_epoch": best_epoch,
+            "best_val_accuracy": max(best_acc, 0.0),
+        })
+        log(f"Validación completada · mejor época {best_epoch} · val_acc {max(best_acc, 0.0) * 100:.2f}%")
+    else:
+        log("Fase 2/3 · Sin conjunto de validación; se conservan los pesos finales.")
 
     # Gradientes finales sobre un lote de prueba para el inspector de pesos.
     if len(yte):
@@ -265,6 +307,9 @@ def train_model(
         except Exception:
             pass
 
+    # ---- Fase 3: prueba (después de la validación) ---------------------
+    notify_phase({"phase": "test", "status": "start", "total": len(yte)})
+    log(f"Fase 3/3 · Prueba sobre {len(yte)} imágenes")
     if len(yte):
         test_loss, test_acc, probs = _evaluate(model, Xte, yte)
         pred = probs.argmax(axis=1)
@@ -278,6 +323,11 @@ def train_model(
         metrics["best_val_accuracy"] = max(best_acc, 0.0)
         probs = np.zeros((0, len(CLASSES)))
         pred = np.array([], dtype=int)
+    notify_phase({
+        "phase": "test", "status": "end", "total": len(yte),
+        "accuracy": float(metrics.get("accuracy", 0.0)),
+        "macro_f1": float(metrics.get("macro_f1", 0.0)),
+    })
 
     return TrainingResult(
         model=model,
@@ -318,6 +368,7 @@ def predict_paths(model, paths: list[str], cfg: TrainingConfig, batch: int = 32)
                 X[i] = preprocess_for_training(
                     p, cfg.input_size, cfg.equalization,
                     roi=cfg.roi_crop, roi_margin=cfg.roi_margin,
+                    clahe_clip=cfg.clahe_clip, clahe_tiles=cfg.clahe_tiles,
                 )
             except (ValueError, OSError, cv2.error):
                 pass

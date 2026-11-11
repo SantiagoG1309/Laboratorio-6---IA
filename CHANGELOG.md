@@ -1,5 +1,37 @@
 # Historial de cambios
 
+## v1.3.0 — 2026-11-10
+
+### Aplicación
+- **Mejora de contraste interactiva y conmutable**: se añade **CLAHE** como método
+  seleccionable, junto a la ecualización global del histograma y «sin mejora». Incluye
+  controles de **límite de contraste** y **rejilla** en el pipeline y en Entrenamiento,
+  y se aplica sobre la luminancia (LAB) para no alterar el tono.
+- **Histograma corregido**: las curvas «Original» y «Procesado» se comparan en frecuencia
+  relativa y con el eje recortado, de modo que la mejora se aprecia también cuando la
+  ecualización aplana el histograma.
+- **Entrenamiento secuencial**: fases estrictas **Entrenamiento → Validación → Prueba**.
+  Durante el entrenamiento se guardan instantáneas; al terminar se validan todas, se
+  restaura la mejor y solo entonces se evalúa el conjunto de prueba. La barra de progreso y
+  el registro muestran la fase actual y ya no se calcula validación dentro del bucle.
+- **Tooltips en el diagrama de la CNN**: cada recuadro muestra operación, forma de salida,
+  parámetros, fórmula y nota; las tarjetas del pipeline también explican su etapa.
+- **Barra lateral adaptable**: el contenido (navegación, estado del dataset, universidad y
+  versión) vive en un área desplazable, por lo que la tarjeta del dataset ya no se recorta
+  en ventanas bajas.
+- Gráficas de validación con marcadores por instantánea y textos de métricas coherentes con
+  las tres fases.
+
+### Núcleo
+- `equalize` y `equalize_rgb` admiten `mode="clahe"` con `clip` y `tiles`; CLAHE se aplica
+  al canal L de CIELAB.
+- `PipelineConfig` y `TrainingConfig` guardan y validan `clahe_clip` y `clahe_tiles`.
+- `train_model` acepta `on_phase` y emite eventos `train`, `val` y `test`; `TrainingThread`
+  los reenvía a la interfaz.
+
+### Distribución
+- Versión de Windows `1.3.0.0`, documentación y capturas actualizadas.
+
 ## v1.2.0 — 2026-11-10
 
 ### Aplicación

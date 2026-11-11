@@ -449,11 +449,16 @@ class NNDiagram(QWidget):
             self.update()
         if hover >= 0 and preferences.get("tooltips", True):
             row = self._rows[hover]
+            shape = row.get("output_shape") or row.get("output", "")
+            if isinstance(shape, tuple):
+                shape = " × ".join(str(v) for v in shape)
+            formula = row.get("formula", "")
             tip = (
                 f"<b>{row.get('stage', '')}</b><br>{row.get('operation', '')}<br>"
-                f"Salida: {row.get('output', '')}<br>"
+                f"Salida: {shape}<br>"
                 f"Parámetros: {row.get('params', '—')}<br>"
-                f"<i>{row.get('note', '')}</i>"
+                + (f"Cálculo: {formula}<br>" if formula else "")
+                + f"<i>{row.get('note', '')}</i>"
             )
             QToolTip.showText(event.globalPosition().toPoint(), tip, self)
         else:

@@ -29,13 +29,16 @@ Si esa carpeta no permite escritura (por ejemplo, `C:\Program Files`), usa
 - **Inicio**: muestra las 341 imágenes incluidas, su distribución y la división
   entrenamiento / validación / prueba (70 / 15 / 15).
 - **Pipeline visual**: observa paso a paso cómo se procesa una imagen (color, segmentación
-  Otsu, escala de grises, ecualización de histograma, convolución, pooling y entrada a la red).
+  Otsu, escala de grises, mejora de contraste —histograma o CLAHE—, convolución, pooling y
+  entrada a la red).
 - **Arquitectura NN**: diagrama de la red, tablas de formas y parámetros, y un
   laboratorio numérico que desglosa la convolución, una neurona oculta y el Softmax
-  con los pesos reales del modelo y una imagen del dataset.
-- **Entrenamiento**: ajusta épocas, batch, learning rate, filtros, etc. y pulsa
-  **Iniciar entrenamiento**. El progreso se ve en vivo. El botón **Aplicar
-  configuración recomendada** carga el preset que mejor equilibró las tres clases.
+  con los pesos reales del modelo y una imagen del dataset. Pasa el cursor por cada
+  recuadro del diagrama para ver su operación, forma de salida y fórmula.
+- **Entrenamiento**: ajusta épocas, batch, learning rate, filtros, método de contraste, etc.
+  y pulsa **Iniciar entrenamiento**. El proceso es secuencial: entrena, valida las
+  instantáneas guardadas y al final evalúa la prueba. El progreso se ve en vivo. El botón
+  **Aplicar configuración recomendada** carga el preset que mejor equilibró las tres clases.
 - **Resultados**: exactitud, matriz de confusión, métricas por clase, predicciones
   y exportación de reportes.
 - **Predicción**: arrastra cualquier foto de un pez y obtén la clase estimada con su

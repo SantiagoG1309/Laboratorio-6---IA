@@ -424,6 +424,8 @@ class PredictPage(QWidget):
                 cfg.equalization,
                 roi=bool(cfg.roi_crop),
                 roi_margin=float(cfg.roi_margin),
+                clahe_clip=float(getattr(cfg, "clahe_clip", 2.0)),
+                clahe_tiles=int(getattr(cfg, "clahe_tiles", 8)),
             )
             probs = np.asarray(model.predict_proba(tensor[None, ...]))[0]
         except Exception as exc:  # noqa: BLE001

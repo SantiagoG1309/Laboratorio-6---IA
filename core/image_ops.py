@@ -257,25 +257,48 @@ def histogram(gray: np.ndarray, bins: int = 256) -> np.ndarray:
     return hist.flatten()
 
 
-def equalize(gray: np.ndarray, mode: str = "hist") -> np.ndarray:
-    """Ecualización global del histograma."""
+def equalize(
+    gray: np.ndarray,
+    mode: str = "hist",
+    clip: float = 2.0,
+    tiles: int = 8,
+) -> np.ndarray:
+    """Ecualización global o CLAHE (contraste local) sobre una imagen 2D."""
     arr = np.asarray(gray)
     if arr.size and np.issubdtype(arr.dtype, np.floating) and float(np.nanmax(arr)) <= 1.5:
         arr = arr * 255.0
     g = np.clip(arr, 0, 255).astype(np.uint8)
     if mode == "hist":
         return cv2.equalizeHist(g)
+    if mode == "clahe":
+        grid = max(2, min(16, int(tiles)))
+        clahe = cv2.createCLAHE(clipLimit=float(np.clip(clip, 0.5, 8.0)), tileGridSize=(grid, grid))
+        return clahe.apply(g)
     return g
 
 
-def equalize_rgb(rgb: np.ndarray, mode: str = "hist") -> np.ndarray:
-    """Aplica la ecualización de histograma a cada canal de una imagen RGB."""
+def equalize_rgb(
+    rgb: np.ndarray,
+    mode: str = "hist",
+    clip: float = 2.0,
+    tiles: int = 8,
+) -> np.ndarray:
+    """Mejora el contraste de una imagen RGB.
+
+    ``hist`` ecualiza cada canal por separado; ``clahe`` aplica el contraste
+    adaptativo al canal L de CIELAB para no alterar el tono de los colores.
+    """
     arr = np.asarray(rgb)
     if arr.ndim == 2:
-        return equalize(arr, mode)
+        return equalize(arr, mode, clip, tiles)
+    u8 = np.clip(arr, 0, 255).astype(np.uint8)
+    if mode == "clahe":
+        lab = cv2.cvtColor(u8, cv2.COLOR_RGB2LAB)
+        lab[:, :, 0] = equalize(lab[:, :, 0], "clahe", clip, tiles)
+        return cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
     if mode != "hist":
-        return np.clip(arr, 0, 255).astype(np.uint8)
-    return np.stack([equalize(arr[:, :, c], mode) for c in range(arr.shape[2])], axis=2)
+        return u8
+    return np.stack([equalize(u8[:, :, c], "hist") for c in range(u8.shape[2])], axis=2)
 
 
 # ---------------------------------------------------------------------------

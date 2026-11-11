@@ -7,7 +7,7 @@ from typing import Any
 APP_NAME = "AquaCNN"
 APP_TITLE = "AquaCNN · Laboratorio 6"
 APP_SUBTITLE = "Tratamiento de imágenes para la clasificación de peces"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 UNIVERSITY = "Universidad de Cundinamarca"
 UNIVERSITY_CAMPUS = "Sede Facatativá"
@@ -96,6 +96,7 @@ COLOR_SPACES = {
 EQUALIZATIONS = {
     "none": "Sin mejora",
     "hist": "Ecualización de histograma",
+    "clahe": "CLAHE (contraste local)",
 }
 POOLINGS = {"max": "Max Pooling", "avg": "Average Pooling", "none": "Sin pooling"}
 
@@ -285,6 +286,8 @@ class PipelineConfig:
     normalize: bool = True
 
     equalization: str = "hist"
+    clahe_clip: float = 2.0        # límite de contraste de CLAHE (0.5-8.0)
+    clahe_tiles: int = 8           # rejilla N×N de CLAHE (2-16)
 
     conv_enabled: bool = True
     kernel_name: str = "vertical"
@@ -357,6 +360,8 @@ class PipelineConfig:
             clean["pool_enabled"] = False
 
         clean["roi_margin"] = _as_float(clean.get("roi_margin"), 0.15, 0.0, 0.40)
+        clean["clahe_clip"] = _as_float(clean.get("clahe_clip"), 2.0, 0.5, 8.0)
+        clean["clahe_tiles"] = _as_int(clean.get("clahe_tiles"), 8, 2, 16)
         clean["resize"] = _as_int(clean.get("resize"), 128, 32, 512)
         clean["padding"] = _as_int(clean.get("padding"), 1, 0, 8)
         clean["stride"] = _as_int(clean.get("stride"), 1, 1, 8)
@@ -393,6 +398,8 @@ class TrainingConfig:
     seed: int = 42
 
     equalization: str = "hist"
+    clahe_clip: float = 2.0
+    clahe_tiles: int = 8
     train_ratio: float = 0.70
     val_ratio: float = 0.15
     test_ratio: float = 0.15
@@ -420,6 +427,8 @@ class TrainingConfig:
         clean["dropout"] = _as_float(clean.get("dropout"), 0.25, 0.0, 0.9)
         clean["label_smoothing"] = _as_float(clean.get("label_smoothing"), 0.05, 0.0, 0.5)
         clean["equalization"] = _choice(clean.get("equalization"), EQUALIZATIONS, "hist")
+        clean["clahe_clip"] = _as_float(clean.get("clahe_clip"), 2.0, 0.5, 8.0)
+        clean["clahe_tiles"] = _as_int(clean.get("clahe_tiles"), 8, 2, 16)
         clean["roi_margin"] = _as_float(clean.get("roi_margin"), 0.15, 0.0, 0.40)
         for key in ("augmentation", "class_weights", "roi_crop"):
             clean[key] = _as_bool(clean.get(key), True)

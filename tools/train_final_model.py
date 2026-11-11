@@ -79,11 +79,28 @@ def main() -> int:
     t0 = time.perf_counter()
     last = {"epoch": 0}
 
+    def on_phase(phase: dict) -> None:
+        names = {"train": "Entrenamiento", "val": "Validación", "test": "Prueba"}
+        name = names.get(str(phase.get("phase", "")), "")
+        status = str(phase.get("status", ""))
+        if not name:
+            return
+        if status == "start":
+            print(f"Fase: {name}", flush=True)
+        elif str(phase.get("phase")) == "val" and status == "progress":
+            print(
+                f"  instantánea época {int(phase.get('epoch', 0)):3d} · "
+                f"val_acc {float(phase.get('val_accuracy', 0.0)) * 100:5.1f}%",
+                flush=True,
+            )
+
     def on_epoch(evo: dict) -> None:
         last.update(evo)
+        val_acc = evo.get("val_accuracy")
+        suffix = "" if val_acc is None else f" · val_acc {float(val_acc) * 100:5.1f}%"
         print(
             f"  época {evo['epoch']:3d}/{evo['epochs']} · loss {evo['loss']:.4f} · "
-            f"acc {evo['accuracy'] * 100:5.1f}% · val_acc {evo['val_accuracy'] * 100:5.1f}%",
+            f"acc {evo['accuracy'] * 100:5.1f}%{suffix}",
             flush=True,
         )
 
@@ -93,6 +110,7 @@ def main() -> int:
         splits["test"],
         cfg,
         on_epoch=on_epoch,
+        on_phase=on_phase,
         on_log=lambda msg: None,
     )
 

@@ -13,9 +13,9 @@ Autores:
 Aplicación de escritorio completa, interactiva y autocontenida que implementa, paso a paso, el
 diagrama del **Laboratorio 6 — Introducción a las Redes Neuronales Convolucionales**:
 
-> adquisición RGB → espacios de color → segmentación Otsu + redimensionado + normalización → histogramas y
-> ecualización → convolución → pooling → flatten → red neuronal con **Backpropagation,
-> Momentum y Softmax**.
+> adquisición RGB → espacios de color → segmentación Otsu + redimensionado + normalización →
+> histogramas y mejora de contraste (ecualización global o CLAHE) → convolución → pooling →
+> flatten → red neuronal con **Backpropagation, Momentum y Softmax**.
 
 Todo el procesamiento y la red neuronal están implementados **desde cero con NumPy**; no se usa
 TensorFlow, PyTorch ni Keras. La interfaz está construida con **PySide6 (Qt 6)** y los cálculos
@@ -127,7 +127,9 @@ etiqueta `DESACTIVADA`.
    envolvente con margen: localiza el pez y descarta el fondo.
 4. **Redimensionado** — tamaño destino independiente (64–256 px), conservando la proporción con relleno.
 5. **Conversión de color** — escala de grises, canal V de HSV o RGB completo (la CNN usa RGB).
-6. **Mejora e histograma** — histograma de 256 bins y ecualización global del histograma por canal.
+6. **Mejora e histograma** — histograma de 256 bins y mejora de contraste conmutable:
+   *sin mejora*, **ecualización global por canal** o **CLAHE** (contraste local sobre la
+   luminancia, con límite de contraste y rejilla ajustables).
 7. **Normalización** — `uint8 [0,255] → float32 [0,1]`.
 8. **Convolución** — kernels 3×3: borde vertical/horizontal, Sobel X/Y, Laplaciano, enfoque,
    relieve o matriz personalizada; padding y stride visibles y editables.
@@ -139,8 +141,9 @@ Puedes buscar imágenes, filtrar por clase y ampliar cualquier etapa a pantalla 
 
 ### Arquitectura NN
 - **Diagrama de círculos y líneas**: una columna por capa, neuronas dibujadas como círculos,
-  conexiones animadas, mapas de activación reales y etiquetas por clase. Los conteos cambian en
-  vivo con los hiperparámetros de Entrenamiento.
+  conexiones animadas, mapas de activación reales y etiquetas por clase. Cada recuadro muestra
+  un **tooltip** con su operación, forma de salida, parámetros, fórmula y nota. Los conteos
+  cambian en vivo con los hiperparámetros de Entrenamiento.
 - **Tabla viva** calculada desde el modelo real: etapa, operación, forma de entrada, kernel,
   stride, padding, filtros, forma de salida, elementos, parámetros, FLOPS y fórmula de la **CNN convolucional**.
 - **Laboratorio numérico con pesos reales**: elige **Conv 1**, **Capa oculta** o **Salida Softmax**
@@ -154,21 +157,26 @@ Puedes buscar imágenes, filtrar por clase y ampliar cualquier etapa a pantalla 
 ### Entrenamiento
 - Clasificador **CNN** (Conv → ReLU → MaxPool → Conv → ReLU → MaxPool → Flatten → Capa oculta → Softmax).
 - Hiperparámetros: épocas, batch, learning rate, momentum, weight decay, semilla, tamaño de entrada,
-  neuronas ocultas, filtros por capa.
+  neuronas ocultas, filtros por capa y **método de contraste** (sin mejora, histograma o CLAHE con
+  clip y rejilla).
+- **Fases secuenciales y estrictas**: primero entrenamiento, luego **validación** de las
+  instantáneas guardadas y al final **prueba**. Las tres fases nunca se ejecutan a la vez;
+  la mejor instantánea se restaura antes de evaluar el conjunto de prueba.
 - Botón **Aplicar configuración recomendada** con el preset que mejor equilibró las tres clases:
   48×48, filtros 6/12, 64 ocultas, 120 épocas, lr 0.005, weight decay 3e-4, histograma, segmentación
   Otsu con margen, aumento y pesos por clase.
 - Data augmentation, pesos por clase y segmentación Otsu opcionales.
-- Gráficas en vivo de **pérdida** y **exactitud** (train/validación), chips de métricas, ETA,
-  barra de progreso y registro detallado.
+- Gráficas en vivo de **pérdida** y **exactitud** (train y validación por instantáneas), chips de
+  métricas, ETA, barra de progreso con la fase actual y registro detallado.
 - Botones para detener, **guardar** y **cargar** el modelo (`.npz` con pesos, configuración e historial).
 - **Modelo preentrenado incluido**: `Modelos entrenados/AquaCNN_cnn_peces.npz` se carga al abrir la
   app y se evalúa automáticamente sobre el conjunto de prueba, de modo que la página *Resultados*
   ya muestra métricas reales sin entrenar nada.
 - El modelo incluido es una CNN pequeña entrenada en CPU con 341 imágenes RGB (3 canales).
-  Su exactitud de prueba ronda el **56 %** (frente al 33 % del azar en tres clases): el dataset es
-  difícil y deliberadamente pequeño. La aplicación está pensada para experimentar: añade imágenes,
-  ajusta hiperparámetros y compara la matriz de confusión.
+  Su exactitud de prueba es del **56 %** en la división incluida (frente al 33 % del azar en tres
+  clases) y ronda el **46 %** de media en validación cruzada de 5 pliegues: el dataset es difícil y
+  deliberadamente pequeño. La aplicación está pensada para experimentar: añade imágenes, ajusta
+  hiperparámetros y compara la matriz de confusión.
 
 ### Resultados
 - Exactitud, F1 macro, precisión y recall macro, mejor exactitud de validación.
@@ -384,4 +392,4 @@ Qt 6 escala automáticamente. Si el texto se ve muy grande o muy pequeño, ajust
   (`Escudo_Universidad_de_Cundinamarca.png`), usada con fines académicos.
 - **Stack:** Python, PySide6/Qt 6, NumPy, OpenCV, Matplotlib, PyInstaller.
 
-Proyecto académico sin fines comerciales · **AquaCNN v1.2.0**.
+Proyecto académico sin fines comerciales · **AquaCNN v1.3.0**.

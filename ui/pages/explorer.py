@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
+    QDoubleSpinBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -250,11 +251,40 @@ class ControlsPanel(QWidget):
         for key, label in EQUALIZATIONS.items():
             self.equal_combo.addItem(label, key)
         self.equal_combo.setCurrentIndex(1)
-        self.enhance_group.body().addLayout(self._combo_row("Mejora de contraste", self.equal_combo))
-        self.enhance_toggle.setToolTip("Ecualiza el histograma de cada canal RGB antes de la convolución.")
-        self.equal_combo.setToolTip(
-            "Sin mejora: conserva la imagen · Histograma: ecualización global por canal."
+        self.enhance_group.body().addLayout(self._combo_row("Método de contraste", self.equal_combo))
+        clahe_row = QHBoxLayout()
+        clahe_row.setSpacing(8)
+        self.clahe_clip = QDoubleSpinBox()
+        self.clahe_clip.setRange(0.5, 8.0)
+        self.clahe_clip.setSingleStep(0.5)
+        self.clahe_clip.setDecimals(1)
+        self.clahe_clip.setValue(2.0)
+        self.clahe_clip.setToolTip(
+            "CLAHE · límite de contraste: valores altos realzan más el detalle local y también el ruido."
         )
+        self.clahe_tiles = QSpinBox()
+        self.clahe_tiles.setRange(2, 16)
+        self.clahe_tiles.setSingleStep(2)
+        self.clahe_tiles.setValue(8)
+        self.clahe_tiles.setToolTip(
+            "CLAHE · rejilla N×N: rejillas pequeñas dan un contraste más local; grandes se acercan al global."
+        )
+        clahe_row.addLayout(self._combo_row("Clip CLAHE", self.clahe_clip))
+        clahe_row.addLayout(self._combo_row("Rejilla", self.clahe_tiles))
+        self.enhance_group.body().addLayout(clahe_row)
+        self.clahe_hint = QLabel("CLAHE realza el contraste local sobre la luminancia (LAB) sin alterar el tono.")
+        self.clahe_hint.setProperty("subtle", True)
+        self.clahe_hint.setWordWrap(True)
+        self.clahe_hint.setStyleSheet("font-size: 9.5px;")
+        self.enhance_group.body().addWidget(self.clahe_hint)
+        self.enhance_toggle.setToolTip(
+            "Aplica la mejora de contraste elegida a la imagen RGB antes de la convolución."
+        )
+        self.equal_combo.setToolTip(
+            "Sin mejora: conserva la imagen · Histograma: ecualización global por canal · "
+            "CLAHE: contraste adaptativo por regiones sobre la luminancia."
+        )
+        self._sync_clahe_controls()
 
         # Convolución
         self.conv_group = self._group("Filtrado y convolución", "grid")
@@ -412,6 +442,12 @@ class ControlsPanel(QWidget):
         """Registra el interruptor propio de la tarjeta como fuente de verdad."""
         self.stage_switches[key] = self._switch(widget)
 
+    def _sync_clahe_controls(self) -> None:
+        """Muestra los ajustes de CLAHE solo cuando ese método está activo."""
+        active = self.equal_combo.currentData() == "clahe"
+        for widget in (self.clahe_clip, self.clahe_tiles, self.clahe_hint):
+            widget.setVisible(active)
+
     @staticmethod
     def _sync_switch(widget: ToggleSwitch, on: bool) -> None:
         if widget.isChecked() == bool(on):
@@ -454,6 +490,9 @@ class ControlsPanel(QWidget):
         self.margin_slider.valueChanged.connect(self._emit)
         self.resize_combo.currentIndexChanged.connect(self._emit)
         self.equal_combo.currentIndexChanged.connect(self._emit)
+        self.equal_combo.currentIndexChanged.connect(self._sync_clahe_controls)
+        self.clahe_clip.valueChanged.connect(self._emit)
+        self.clahe_tiles.valueChanged.connect(self._emit)
         self.pool_combo.currentIndexChanged.connect(self._emit)
         self.pool_size.valueChanged.connect(self._emit)
         self.pool_stride.valueChanged.connect(self._emit)
@@ -499,6 +538,8 @@ class ControlsPanel(QWidget):
             enhance_enabled=self.stage_switches["enhance"].isChecked(),
             normalize=self.stage_switches["normalize"].isChecked(),
             equalization=self.equal_combo.currentData(),
+            clahe_clip=float(self.clahe_clip.value()),
+            clahe_tiles=int(self.clahe_tiles.value()),
             conv_enabled=self.stage_switches["conv"].isChecked(),
             kernel_name=self.kernel_combo.currentData(),
             kernel=self.kernel_editor.values(),
@@ -537,6 +578,8 @@ class ControlsPanel(QWidget):
             idx = self.equal_combo.findData(cfg.equalization)
             if idx >= 0:
                 self.equal_combo.setCurrentIndex(idx)
+            self.clahe_clip.setValue(float(cfg.clahe_clip))
+            self.clahe_tiles.setValue(int(cfg.clahe_tiles))
             idx = self.kernel_combo.findData(cfg.kernel_name)
             if idx >= 0:
                 self.kernel_combo.setCurrentIndex(idx)
@@ -551,6 +594,7 @@ class ControlsPanel(QWidget):
             self.pool_stride.setValue(cfg.pool_stride)
         finally:
             self._loading = False
+        self._sync_clahe_controls()
 
 
 class ExplorerPage(QWidget):
@@ -841,6 +885,12 @@ class ExplorerPage(QWidget):
         states = res.stage_states
         for key, card in self.stage_cards.items():
             card.set_enabled(self.cfg.stage_enabled(key))
+            stage = by_key.get(key, {})
+            card.setToolTip(
+                f"{card._title}\n{stage.get('detail', '')}\n"
+                f"Forma de salida: {stage.get('shape', '—')}\n"
+                + ("Activa" if self.cfg.stage_enabled(key) else "Desactivada: la imagen pasa sin cambios")
+            )
 
         def detail(key: str) -> str:
             stage = by_key.get(key, {})

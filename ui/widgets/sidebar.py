@@ -2,7 +2,17 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.config import APP_VERSION, CLASSES, CLASS_COLORS, CLASS_LABELS, UNIVERSITY_CAMPUS
 from ui import icons
@@ -36,7 +46,7 @@ class Sidebar(QFrame):
         # comerse el área de contenido en pantallas grandes.
         self.setMinimumWidth(208)
         self.setMaximumWidth(252)
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout()
         layout.setContentsMargins(16, 20, 16, 16)
         layout.setSpacing(6)
 
@@ -173,6 +183,24 @@ class Sidebar(QFrame):
         version.setProperty("subtle", True)
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
+
+        # El contenido completo vive dentro de un área desplazable: en
+        # ventanas bajas la tarjeta del dataset ya no se recorta ni se solapa
+        # con el pie de la barra lateral.
+        inner = QWidget()
+        inner.setLayout(layout)
+        inner.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
+        scroll.setWidget(inner)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(scroll)
 
         self.set_current(0)
 
