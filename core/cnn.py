@@ -1,9 +1,12 @@
 """Red neuronal convolucional (CNN) desde cero con NumPy.
 
 Arquitectura por defecto:
-    Entrada 1×H×W → Conv(3×3) → ReLU → MaxPool(2) →
+    Entrada 3×H×W (RGB) → Conv(3×3) → ReLU → MaxPool(2) →
     Conv(3×3) → ReLU → MaxPool(2) → Flatten → Capa oculta → ReLU →
-    Capa de salida → Softmax
+    Capa de salida (3 neuronas) → Softmax
+
+La capa de salida tiene una neurona por clase (Trucha, Mojarra, Pavón) y
+Softmax convierte esos 3 logits en una distribución de probabilidad.
 
 La capa oculta es una capa de backpropagation: cada neurona combina todas las
 activaciones del vector aplanado mediante z = x·W + b. El entrenamiento usa
@@ -14,6 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from core.config import INPUT_CHANNELS
 from core.nn import HiddenLayer, ReLU, Momentum, softmax
 
 DTYPE = np.float32
@@ -160,13 +164,14 @@ class CNN:
     ):
         rng = np.random.default_rng(seed)
         self.input_size = int(input_size)
+        self.in_channels = INPUT_CHANNELS
         self.n_out = int(n_out)
         self.filters1 = int(filters1)
         self.filters2 = int(filters2)
         self.hidden = int(hidden)
         self.dropout = float(dropout)
         self.layers: list = [
-            Conv2D(1, filters1, 3, padding=1, stride=1, rng=rng),
+            Conv2D(self.in_channels, filters1, 3, padding=1, stride=1, rng=rng),
             ReLU(),
             MaxPool2D(2, 2),
             Conv2D(filters1, filters2, 3, padding=1, stride=1, rng=rng),
@@ -197,6 +202,21 @@ class CNN:
         """Capa de salida que produce los tres logits antes de Softmax."""
         return self.hidden_layers()[-1]
 
+    def _as_batch(self, x: np.ndarray, where: str) -> np.ndarray:
+        """Normaliza la entrada a (N, 3, H, W) y valida el tensor RGB."""
+        arr = np.asarray(x, dtype=DTYPE)
+        if arr.ndim == 3:
+            if arr.shape[0] == self.in_channels:
+                arr = arr[None, ...]
+            elif arr.shape[-1] == self.in_channels:
+                arr = np.transpose(arr, (2, 0, 1))[None, ...]
+        if arr.ndim != 4 or arr.shape[1:] != (self.in_channels, self.input_size, self.input_size):
+            raise ValueError(
+                f"{where} espera (N, {self.in_channels}, {self.input_size}, {self.input_size}); "
+                f"recibió {arr.shape}"
+            )
+        return arr
+
     def set_training(self, flag: bool) -> None:
         """Activa o desactiva el dropout de las capas que lo soportan."""
         for layer in self.layers:
@@ -204,15 +224,7 @@ class CNN:
                 layer.training = bool(flag)
 
     def forward(self, x: np.ndarray) -> np.ndarray:
-        arr = np.asarray(x, dtype=DTYPE)
-        if arr.ndim == 3:
-            arr = arr[:, None, :, :]
-        if arr.ndim == 2:
-            arr = arr.reshape(-1, 1, self.input_size, self.input_size)
-        if arr.ndim != 4 or arr.shape[1:] != (1, self.input_size, self.input_size):
-            raise ValueError(
-                f"La CNN espera (N, 1, {self.input_size}, {self.input_size}); recibió {arr.shape}"
-            )
+        arr = self._as_batch(x, "La CNN")
         for layer in self.layers:
             arr = layer.forward(arr)
         return arr
@@ -228,11 +240,7 @@ class CNN:
     def forward_trace(self, x: np.ndarray) -> list[dict]:
         """Forward capa por capa para inspeccionar mapas de activación."""
         self.set_training(False)
-        arr = np.asarray(x, dtype=DTYPE)
-        if arr.ndim == 3:
-            arr = arr[:, None, :, :]
-        if arr.ndim == 2:
-            arr = arr.reshape(-1, 1, self.input_size, self.input_size)
+        arr = self._as_batch(x, "forward_trace")
         trace = [{"name": "Entrada", "kind": "input", "array": arr.copy()}]
         conv_i = pool_i = hidden_i = 0
         for layer in self.layers:

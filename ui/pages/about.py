@@ -118,8 +118,8 @@ class AboutPage(QWidget):
         p = QLabel(
             "Aplicar técnicas de tratamiento digital de imágenes para preparar un conjunto de datos "
             "que permita clasificar peces de acuicultura. El flujo sigue el diagrama del laboratorio: "
-            "adquisición → espacios de color → preprocesamiento (ROI, redimensionado, normalización) → "
-            "análisis (histogramas, ecualización/CLAHE) → filtrado y convolución → pooling → flatten → "
+            "adquisición → espacios de color → preprocesamiento (segmentación Otsu, redimensionado, normalización) → "
+            "análisis (histogramas y ecualización) → filtrado y convolución → pooling → flatten → "
             "clasificador neuronal con Backpropagation, Momentum y Softmax."
         )
         p.setWordWrap(True)
@@ -133,8 +133,8 @@ class AboutPage(QWidget):
         items = [
             ("1", "Adquisición", "Carga RGB (H×W×3), lectura segura de rutas unicode y caché de imágenes.", ACCENT),
             ("2", "Espacios de color", "Canales R, G, B y conversión a escala de grises y HSV (H, S, V).", ACCENT_2),
-            ("3", "Preprocesamiento", "ROI cuadrada configurable, redimensionado uniforme y normalización [0,1].", SUCCESS),
-            ("4", "Análisis", "Histograma de 256 bins, ecualización global y CLAHE adaptativa.", WARNING),
+            ("3", "Preprocesamiento", "Segmentación Otsu, redimensionado con relleno y normalización [0,1].", SUCCESS),
+            ("4", "Análisis", "Histograma de 256 bins y ecualización global por canal.", WARNING),
             ("5", "Convolución", "Kernels 3×3 (vertical, horizontal, Sobel, Laplaciano, enfoque, relieve, personalizado) con padding y stride.", PURPLE),
             ("6", "Pooling + Flatten", "Max/Average pooling configurable y vectorización del mapa de características.", ACCENT),
             ("7", "Clasificador CNN", "Red neuronal convolucional con backpropagation manual en NumPy puro: convolución 2D, max pooling, ReLU, capas ocultas, Momentum, softmax y entropía cruzada.", ACCENT_2),
@@ -197,7 +197,7 @@ class AboutPage(QWidget):
         stack.body().addWidget(SectionHeader("Stack tecnológico", "Arquitectura MVC + QThread"))
         for name, desc in (
             ("PySide6", "Interfaz Qt6, tema oscuro, hilos QThread/QThreadPool."),
-            ("OpenCV", "Lectura, color, ROI, redimensionado, histogramas, CLAHE."),
+            ("OpenCV", "Lectura, color, segmentación Otsu, redimensionado e histogramas."),
             ("NumPy", "Tensores, convolución vectorizada, backpropagation."),
             ("Matplotlib", "Histogramas, curvas de entrenamiento y matriz de confusión."),
             ("PyInstaller", "Empaquetado en ejecutable nativo independiente."),

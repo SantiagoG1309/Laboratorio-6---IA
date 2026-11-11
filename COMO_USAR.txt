@@ -9,6 +9,9 @@ El ejecutable incluye el dataset de 341 imágenes y un modelo CNN ya entrenado.
 En el primer arranque se copian a una carpeta escribible (junto al .exe o, si no
 hay permisos, en %LOCALAPPDATA%\AquaCNN) para que puedas modificarlos.
 
+En la pestaña "Predicción" puedes arrastrar cualquier foto de un pez y ver la
+clase estimada (trucha, mojarra o pavón) con su porcentaje de confianza.
+
 Requisitos: Windows 10 u 11 de 64 bits. No requiere permisos de administrador.
 
 Si Windows SmartScreen muestra un aviso:

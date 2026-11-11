@@ -8,9 +8,9 @@ from typing import Any
 import numpy as np
 
 from core.cnn import build_model
-from core.config import CLASSES, TrainingConfig
+from core.config import CLASSES, INPUT_CHANNELS, TrainingConfig
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 
 
 def save_model(path: str | Path, model, cfg: TrainingConfig, extra: dict[str, Any] | None = None) -> Path:
@@ -27,6 +27,7 @@ def save_model(path: str | Path, model, cfg: TrainingConfig, extra: dict[str, An
         "hidden": int(cfg.hidden_units),
         "filters1": int(cfg.conv_filters),
         "filters2": int(cfg.conv_filters2),
+        "in_channels": INPUT_CHANNELS,
         "n_out": len(CLASSES),
         "dropout": float(cfg.dropout),
         "label_smoothing": float(cfg.label_smoothing),
@@ -47,6 +48,12 @@ def load_model(path: str | Path):
         if "meta" not in data:
             raise ValueError("El archivo no contiene metadatos de AquaCNN")
         meta = json.loads(str(data["meta"]))
+        saved_channels = int(meta.get("in_channels", 1))
+        if saved_channels != INPUT_CHANNELS:
+            raise ValueError(
+                f"El modelo fue entrenado con {saved_channels} canal(es); esta versión usa "
+                f"{INPUT_CHANNELS} canales RGB. Vuelve a entrenarlo."
+            )
         cfg = TrainingConfig.from_dict(meta.get("training_config", {}))
         model = build_model(
             meta.get("model_type", cfg.model_type),

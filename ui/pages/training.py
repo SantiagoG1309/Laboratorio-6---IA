@@ -230,7 +230,7 @@ class TrainingPage(QWidget):
         train_card.body().addLayout(wrow)
         self.aug_toggle = self._toggle_row("Data augmentation", True)
         self.weights_toggle = self._toggle_row("Pesos por clase", True)
-        self.roi_toggle = self._toggle_row("Recorte ROI al entrenar", True)
+        self.roi_toggle = self._toggle_row("Segmentación Otsu al entrenar", True)
         self.aug_toggle.setToolTip(
             "Data augmentation: genera volteos, cambios de brillo y recortes para que la red generalice mejor."
         )
@@ -238,7 +238,7 @@ class TrainingPage(QWidget):
             "Pesos por clase: compensa el desbalance dando más importancia a las clases con menos imágenes."
         )
         self.roi_toggle.setToolTip(
-            "Recorte ROI: centra un recorte cuadrado en el pez antes de redimensionar, igual que en el pipeline."
+            "Segmentación Otsu: localiza el pez con el contorno más grande y recorta su caja con margen, igual que en el pipeline."
         )
         train_card.body().addWidget(self.aug_toggle)
         train_card.body().addWidget(self.weights_toggle)
@@ -246,9 +246,9 @@ class TrainingPage(QWidget):
         self.equal_combo = QComboBox()
         for key, label in EQUALIZATIONS.items():
             self.equal_combo.addItem(label, key)
-        self.equal_combo.setCurrentIndex(2)
+        self.equal_combo.setCurrentIndex(1)
         self.equal_combo.setToolTip(
-            "Mejora de contraste aplicada a cada imagen: ninguna, ecualización global o CLAHE adaptativa por bloques."
+            "Mejora de contraste aplicada a cada imagen: sin mejora o ecualización global del histograma."
         )
         train_card.body().addLayout(self._combo("Mejora de contraste", self.equal_combo))
         cl.addWidget(train_card)
@@ -258,8 +258,8 @@ class TrainingPage(QWidget):
         self.preset_btn.setProperty("variant", "ghost")
         self.preset_btn.setIcon(icons.icon("check", MUTED, 15))
         self.preset_btn.setToolTip(
-            "Ajusta 48×48, 6/12 filtros, 64 neuronas ocultas, 80 épocas, lr 0.01, "
-            "weight decay 1e-4, CLAHE, aumento y pesos por clase: la combinación que mejor "
+            "Ajusta 48×48, 6/12 filtros, 64 neuronas ocultas, 120 épocas, lr 0.005, "
+            "weight decay 3e-4, histograma, aumento y pesos por clase: la combinación que mejor "
             "equilibró las tres clases en este laboratorio."
         )
         self.preset_btn.clicked.connect(self._apply_recommended)
@@ -467,9 +467,9 @@ class TrainingPage(QWidget):
             augmentation=self.aug_toggle._switch.isChecked(),  # type: ignore[attr-defined]
             class_weights=self.weights_toggle._switch.isChecked(),  # type: ignore[attr-defined]
             roi_crop=self.roi_toggle._switch.isChecked(),  # type: ignore[attr-defined]
+            roi_margin=float(self.main.pipeline_cfg.roi_margin),
             seed=self.seed_spin.value(),
             equalization=self.equal_combo.currentData(),
-            clahe_clip=self.main.pipeline_cfg.clahe_clip,
             train_ratio=self.main.training_cfg.train_ratio,
             val_ratio=self.main.training_cfg.val_ratio,
             test_ratio=self.main.training_cfg.test_ratio,
@@ -482,27 +482,28 @@ class TrainingPage(QWidget):
         cfg.hidden_units = 64
         cfg.conv_filters = 6
         cfg.conv_filters2 = 12
-        cfg.epochs = 80
+        cfg.epochs = 120
         cfg.batch_size = 16
-        cfg.learning_rate = 0.01
+        cfg.learning_rate = 0.005
         cfg.momentum = 0.9
-        cfg.weight_decay = 1e-4
+        cfg.weight_decay = 3e-4
         cfg.seed = 42
         cfg.augmentation = True
         cfg.class_weights = True
         cfg.roi_crop = True
-        cfg.equalization = "clahe"
+        cfg.roi_margin = float(self.main.pipeline_cfg.roi_margin)
+        cfg.equalization = "hist"
         cfg.dropout = 0.25
         cfg.label_smoothing = 0.05
         self._apply_config(cfg)
         self._emit_config()
         self.status.setText(
             "Configuración recomendada aplicada · 48×48 · 6/12 filtros · 64 ocultas · "
-            "80 épocas · lr 0.01 · CLAHE · ROI · aumento · pesos por clase."
+            "120 épocas · lr 0.005 · histograma · Otsu · aumento · pesos por clase."
         )
         self._log(
             "Preset recomendado aplicado. Entrena y compara val accuracy antes de guardar; "
-            "si baja, vuelve a 30-60 épocas."
+            "si baja, prueba con 60–100 épocas."
         )
 
     def set_loaded_model(self, meta: dict, name: str) -> None:

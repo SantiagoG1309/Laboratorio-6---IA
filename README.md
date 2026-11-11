@@ -13,8 +13,8 @@ Autores:
 Aplicación de escritorio completa, interactiva y autocontenida que implementa, paso a paso, el
 diagrama del **Laboratorio 6 — Introducción a las Redes Neuronales Convolucionales**:
 
-> adquisición RGB → espacios de color → ROI + redimensionado + normalización → histogramas y
-> ecualización/CLAHE → convolución → pooling → flatten → red neuronal con **Backpropagation,
+> adquisición RGB → espacios de color → segmentación Otsu + redimensionado + normalización → histogramas y
+> ecualización → convolución → pooling → flatten → red neuronal con **Backpropagation,
 > Momentum y Softmax**.
 
 Todo el procesamiento y la red neuronal están implementados **desde cero con NumPy**; no se usa
@@ -49,6 +49,10 @@ si la carpeta es editable o, si no lo es (por ejemplo `C:\Program Files`), en
 | Arquitectura NN | Resultados |
 |---|---|
 | ![Arquitectura](docs/capturas/arquitectura.png) | ![Resultados](docs/capturas/resultados.png) |
+
+**Predicción**
+
+![Predicción](docs/capturas/prediccion.png)
 
 ### Opción A — Lanzador de un solo clic (recomendado para desarrollo)
 
@@ -119,10 +123,11 @@ etiqueta `DESACTIVADA`.
 
 1. **Imagen original** — RGB, dimensiones, canales, dtype.
 2. **Espacios de color** — canales R, G, B y H, S, V.
-3. **Recorte de ROI** — recorte cuadrado configurable (zoom, centro X/Y).
-4. **Redimensionado** — tamaño destino independiente (64–256 px).
-5. **Conversión de color** — escala de grises, canal V de HSV o RGB completo.
-6. **Mejora e histograma** — histograma de 256 bins, ecualización global o **CLAHE** con clip limit.
+3. **Segmentación Otsu** — umbral automático, limpieza morfológica, contorno más grande y caja
+   envolvente con margen: localiza el pez y descarta el fondo.
+4. **Redimensionado** — tamaño destino independiente (64–256 px), conservando la proporción con relleno.
+5. **Conversión de color** — escala de grises, canal V de HSV o RGB completo (la CNN usa RGB).
+6. **Mejora e histograma** — histograma de 256 bins y ecualización global del histograma por canal.
 7. **Normalización** — `uint8 [0,255] → float32 [0,1]`.
 8. **Convolución** — kernels 3×3: borde vertical/horizontal, Sobel X/Y, Laplaciano, enfoque,
    relieve o matriz personalizada; padding y stride visibles y editables.
@@ -151,17 +156,17 @@ Puedes buscar imágenes, filtrar por clase y ampliar cualquier etapa a pantalla 
 - Hiperparámetros: épocas, batch, learning rate, momentum, weight decay, semilla, tamaño de entrada,
   neuronas ocultas, filtros por capa.
 - Botón **Aplicar configuración recomendada** con el preset que mejor equilibró las tres clases:
-  48×48, filtros 6/12, 64 ocultas, 80 épocas, lr 0.01, weight decay 1e-4, CLAHE, ROI, aumento y
-  pesos por clase.
-- Data augmentation, pesos por clase y recorte ROI opcionales.
+  48×48, filtros 6/12, 64 ocultas, 120 épocas, lr 0.005, weight decay 3e-4, histograma, segmentación
+  Otsu con margen, aumento y pesos por clase.
+- Data augmentation, pesos por clase y segmentación Otsu opcionales.
 - Gráficas en vivo de **pérdida** y **exactitud** (train/validación), chips de métricas, ETA,
   barra de progreso y registro detallado.
 - Botones para detener, **guardar** y **cargar** el modelo (`.npz` con pesos, configuración e historial).
 - **Modelo preentrenado incluido**: `Modelos entrenados/AquaCNN_cnn_peces.npz` se carga al abrir la
   app y se evalúa automáticamente sobre el conjunto de prueba, de modo que la página *Resultados*
   ya muestra métricas reales sin entrenar nada.
-- El modelo incluido es una CNN pequeña entrenada en CPU con 341 imágenes en escala de grises.
-  Su exactitud de prueba ronda el **46 %** (frente al 33 % del azar en tres clases): el dataset es
+- El modelo incluido es una CNN pequeña entrenada en CPU con 341 imágenes RGB (3 canales).
+  Su exactitud de prueba ronda el **56 %** (frente al 33 % del azar en tres clases): el dataset es
   difícil y deliberadamente pequeño. La aplicación está pensada para experimentar: añade imágenes,
   ajusta hiperparámetros y compara la matriz de confusión.
 
@@ -173,6 +178,13 @@ Puedes buscar imágenes, filtrar por clase y ampliar cualquier etapa a pantalla 
   de calor, estadísticas (forma, mínimo, máximo, media, desviación, norma L2, porcentaje de ceros)
   y el gradiente ∂L/∂θ calculado por backpropagation.
 - **Exportar reporte CSV** y **exportar el dataset procesado** por etapas.
+
+### Predicción
+- Sección independiente para **arrastrar y soltar cualquier imagen** (o elegirla con el explorador).
+- Vista previa del archivo, del tensor RGB exacto que consume la CNN y de la segmentación aplicada.
+- Resultado con la **clase predicha**, su **porcentaje de confianza** y las **tres probabilidades
+  Softmax** en barras comparativas; aviso automático cuando la confianza es baja.
+- Reutiliza el mismo preprocesado y el mismo modelo que la página de Resultados, sin duplicar lógica.
 
 ### Acerca del laboratorio
 Objetivo, etapas implementadas, formulación matemática, stack tecnológico, créditos del dataset y
@@ -200,7 +212,7 @@ Dataset_procesado_AAAAMMDD_HHMM/
 │   ├── 02_canales_rgb_hsv/        R, G, B, H, S, V por imagen
 │   ├── 03_escala_grises/          luminancia
 │   ├── 04_roi_redimensionada/     ROI + resize
-│   ├── 05_ecualizado/             ecualización / CLAHE aplicada
+│   ├── 05_ecualizado/             ecualización de histograma aplicada
 │   ├── 06_convolucion/            mapas de convolución
 │   └── 07_pooling/                mapas tras pooling
 ├── mojarra/                       misma estructura
@@ -278,7 +290,7 @@ Laboratorio6/
 │   ├── glossary.py             definiciones usadas en tooltips y Configuración
 │   ├── icons.py                iconos SVG y logotipo en tiempo de ejecución
 │   ├── workers.py              QThread / QRunnable de escaneo, pipeline y entrenamiento
-│   ├── pages/                  dashboard, explorer, architecture, training, results, about, settings
+│   ├── pages/                  dashboard, explorer, architecture, training, results, predict, about, settings
 │   ├── widgets/                tarjetas, gráficos, diagrama NN, inspector, kernel editor
 │   └── assets/                 icono .ico/.png, logotipo y chevrons SVG
 ├── utils/
@@ -297,7 +309,7 @@ Laboratorio6/
 
 | Atajo | Acción |
 |---|---|
-| `Ctrl + 1…7` | Navegar entre páginas |
+| `Ctrl + 1…8` | Navegar entre páginas |
 | `Ctrl + O` | Seleccionar carpeta del dataset |
 | `F5` | Recalcular el pipeline de la imagen actual |
 | `Ctrl + E` | Exportar el dataset procesado |
@@ -350,7 +362,7 @@ Es normal: el dataset y el modelo se copian una sola vez (se crea el marcador
 `.dataset_inicializado`). La copia ocurre en segundo plano y la ventana sigue respondiendo.
 
 **Exactitud baja con pocas épocas**  
-El dataset es pequeño/mediano (341 imágenes, ~110 por clase). Usa el modelo CNN, 40–80 épocas,
+El dataset es pequeño/mediano (341 imágenes, ~110 por clase). Usa el modelo CNN, 100–150 épocas,
 augmentation y `learning rate` entre 0.001 y 0.01. Revisa la matriz de confusión para detectar
 clases confundidas.
 
@@ -372,4 +384,4 @@ Qt 6 escala automáticamente. Si el texto se ve muy grande o muy pequeño, ajust
   (`Escudo_Universidad_de_Cundinamarca.png`), usada con fines académicos.
 - **Stack:** Python, PySide6/Qt 6, NumPy, OpenCV, Matplotlib, PyInstaller.
 
-Proyecto académico sin fines comerciales · **AquaCNN v1.1.1**.
+Proyecto académico sin fines comerciales · **AquaCNN v1.2.0**.

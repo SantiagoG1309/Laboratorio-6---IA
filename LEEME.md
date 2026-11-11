@@ -28,8 +28,8 @@ Si esa carpeta no permite escritura (por ejemplo, `C:\Program Files`), usa
 
 - **Inicio**: muestra las 341 imágenes incluidas, su distribución y la división
   entrenamiento / validación / prueba (70 / 15 / 15).
-- **Pipeline visual**: observa paso a paso cómo se procesa una imagen (color, ROI,
-  escala de grises, CLAHE, convolución, pooling y entrada a la red).
+- **Pipeline visual**: observa paso a paso cómo se procesa una imagen (color, segmentación
+  Otsu, escala de grises, ecualización de histograma, convolución, pooling y entrada a la red).
 - **Arquitectura NN**: diagrama de la red, tablas de formas y parámetros, y un
   laboratorio numérico que desglosa la convolución, una neurona oculta y el Softmax
   con los pesos reales del modelo y una imagen del dataset.
@@ -38,6 +38,8 @@ Si esa carpeta no permite escritura (por ejemplo, `C:\Program Files`), usa
   configuración recomendada** carga el preset que mejor equilibró las tres clases.
 - **Resultados**: exactitud, matriz de confusión, métricas por clase, predicciones
   y exportación de reportes.
+- **Predicción**: arrastra cualquier foto de un pez y obtén la clase estimada con su
+  porcentaje de confianza y las probabilidades de las tres clases.
 - **Configuración**: temas, color de acento, tipografía y comportamiento.
 
 El modelo incluido ya está evaluado al abrir la app, así que **Resultados** muestra
@@ -63,7 +65,7 @@ Los nombres deben ser exactamente `trucha`, `mojarra` y `pavon` (sin tildes).
 
 | Atajo | Acción |
 |---|---|
-| `Ctrl + 1…7` | Cambiar de página |
+| `Ctrl + 1…8` | Cambiar de página |
 | `Ctrl + O` | Elegir carpeta del dataset |
 | `F5` | Recalcular el pipeline |
 | `Ctrl + E` | Exportar el dataset procesado |

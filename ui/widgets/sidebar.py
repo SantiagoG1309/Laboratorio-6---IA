@@ -78,6 +78,7 @@ class Sidebar(QFrame):
             ("Arquitectura NN", "brain", "Esquema, tablas y laboratorio numérico paso a paso"),
             ("Entrenamiento", "cpu", "Hiperparámetros y monitoreo del aprendizaje"),
             ("Resultados", "chart", "Métricas, matriz de confusión e inspector de pesos"),
+            ("Predicción", "sparkles", "Arrastra una imagen y obtén la clase con su confianza"),
         ]
         for i, (text, icon_name, tip) in enumerate(items):
             btn = NavButton(text, icon_name)
@@ -95,14 +96,14 @@ class Sidebar(QFrame):
         layout.addSpacing(4)
         about = NavButton("Acerca del laboratorio", "info")
         about.setToolTip("Teoría, fórmulas, autores y créditos del proyecto")
-        about.clicked.connect(lambda: self.pageChanged.emit(5))
-        self.group.addButton(about, 5)
+        about.clicked.connect(lambda: self.pageChanged.emit(6))
+        self.group.addButton(about, 6)
         self.buttons.append(about)
         layout.addWidget(about)
         settings = NavButton("Configuración", "sliders")
         settings.setToolTip("Tema, color de acento, animaciones, tooltips y preferencias")
-        settings.clicked.connect(lambda: self.pageChanged.emit(6))
-        self.group.addButton(settings, 6)
+        settings.clicked.connect(lambda: self.pageChanged.emit(7))
+        self.group.addButton(settings, 7)
         self.buttons.append(settings)
         layout.addWidget(settings)
 

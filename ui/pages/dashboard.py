@@ -133,8 +133,8 @@ class PipelineStrip(Card):
     steps = [
         ("image", "Adquisición", "Imagen RGB"),
         ("layers", "Espacios de color", "R · G · B / HSV"),
-        ("maximize", "Preprocesamiento", "ROI · 128×128"),
-        ("wave", "Análisis", "Histograma · CLAHE"),
+        ("maximize", "Preprocesamiento", "Otsu · margen"),
+        ("wave", "Análisis", "Histograma"),
         ("grid", "Convolución", "Kernels 3×3"),
         ("target", "Pooling + Flatten", "Vector de entrada"),
     ]
@@ -306,7 +306,7 @@ class DashboardPage(QWidget):
         title.setStyleSheet("font-size: 32px;")
         col.addWidget(title)
         desc = QLabel(
-            "Tratamiento digital de imágenes de trucha, mojarra y pavón: espacios de color, ROI, "
+            "Tratamiento digital de imágenes de trucha, mojarra y pavón: espacios de color, segmentación Otsu, "
             "histogramas, convolución, pooling y una red neuronal entrenada con Backpropagation + Momentum."
         )
         desc.setProperty("muted", True)

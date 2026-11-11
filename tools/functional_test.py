@@ -99,7 +99,7 @@ def check_results():
                    {"accuracy": win.training_result.metrics["accuracy"]})
         model, meta, cfg = load_model(out)
         probs = model.predict_proba(
-            __import__("numpy").zeros((2, 1, 32, 32), dtype="float32")
+            __import__("numpy").zeros((2, 3, 32, 32), dtype="float32")
         )
         print("modelo guardado/cargado", meta.get("model_type"), probs.shape)
         # Exportar una muestra de 6 imágenes

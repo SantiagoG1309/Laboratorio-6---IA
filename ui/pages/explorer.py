@@ -210,6 +210,7 @@ class ControlsPanel(QWidget):
             self.color_btn_group.addButton(b)
             self.color_buttons[key] = b
             row.addWidget(b)
+        self.color_buttons["rgb"].setChecked(True)
         self.color_group.body().addLayout(row)
         self.show_channels = self._toggle_row("Mostrar canales R/G/B + HSV", True)
         self.color_group.body().addWidget(self.show_channels)
@@ -218,14 +219,10 @@ class ControlsPanel(QWidget):
 
         # Geometría
         self.geo_group = self._group("Geometría y normalización", "maximize")
-        self.roi_toggle = self._toggle_row("Recorte de ROI", True)
+        self.roi_toggle = self._toggle_row("Segmentación Otsu (contorno mayor)", True)
         self.geo_group.body().addWidget(self.roi_toggle)
-        self.zoom_slider, self.zoom_label = self._slider_row("Zoom de ROI", 40, 100, 100)
-        self.geo_group.body().addLayout(self._labeled_row("Zoom de ROI", self.zoom_label, self.zoom_slider))
-        self.x_slider, self.x_label = self._slider_row("Centro X", 0, 100, 50)
-        self.geo_group.body().addLayout(self._labeled_row("Centro X", self.x_label, self.x_slider))
-        self.y_slider, self.y_label = self._slider_row("Centro Y", 0, 100, 50)
-        self.geo_group.body().addLayout(self._labeled_row("Centro Y", self.y_label, self.y_slider))
+        self.margin_slider, self.margin_label = self._slider_row("Margen de la caja", 0, 40, 15)
+        self.geo_group.body().addLayout(self._labeled_row("Margen de la caja", self.margin_label, self.margin_slider))
         self.resize_toggle = self._toggle_row("Redimensionar", True)
         self.geo_group.body().addWidget(self.resize_toggle)
         self.resize_combo = QComboBox()
@@ -235,11 +232,13 @@ class ControlsPanel(QWidget):
         self.geo_group.body().addLayout(self._combo_row("Redimensionar a", self.resize_combo))
         self.normalize_toggle = self._toggle_row("Normalizar a [0, 1]", True)
         self.geo_group.body().addWidget(self.normalize_toggle)
-        self.roi_toggle.setToolTip("Recorta un cuadrado alrededor del pez antes de redimensionar (Región de Interés).")
-        self.zoom_slider.setToolTip("Qué porcentaje del lado menor se conserva en el recorte ROI.")
-        self.x_slider.setToolTip("Posición horizontal del centro del recorte, en porcentaje del ancho.")
-        self.y_slider.setToolTip("Posición vertical del centro del recorte, en porcentaje del alto.")
-        self.resize_toggle.setToolTip("Redimensiona la imagen a un cuadrado fijo para que la red reciba siempre el mismo tamaño.")
+        self.roi_toggle.setToolTip(
+            "Umbral de Otsu → contorno más grande → caja envolvente: localiza el pez y elimina el fondo."
+        )
+        self.margin_slider.setToolTip(
+            "Espacio extra alrededor de la caja del pez, en porcentaje del ancho y alto detectados."
+        )
+        self.resize_toggle.setToolTip("Redimensiona la ROI a un cuadrado fijo conservando la proporción del pez (con relleno).")
         self.resize_combo.setToolTip("Resolución de salida del redimensionado: más grande conserva detalle y cuesta más.")
         self.normalize_toggle.setToolTip("Convierte los píxeles de 0–255 a 0–1, lo que estabiliza el entrenamiento.")
 
@@ -250,15 +249,12 @@ class ControlsPanel(QWidget):
         self.equal_combo = QComboBox()
         for key, label in EQUALIZATIONS.items():
             self.equal_combo.addItem(label, key)
-        self.equal_combo.setCurrentIndex(2)
+        self.equal_combo.setCurrentIndex(1)
         self.enhance_group.body().addLayout(self._combo_row("Mejora de contraste", self.equal_combo))
-        self.clip_slider, self.clip_label = self._slider_row("CLAHE clip limit", 5, 80, 20)
-        self.enhance_group.body().addLayout(self._labeled_row("CLAHE clip limit", self.clip_label, self.clip_slider))
-        self.enhance_toggle.setToolTip("Mejora el contraste local de la imagen antes de la convolución.")
+        self.enhance_toggle.setToolTip("Ecualiza el histograma de cada canal RGB antes de la convolución.")
         self.equal_combo.setToolTip(
-            "Ninguna: sin cambios · Global: ecualiza todo el histograma · CLAHE: ecualización adaptativa por bloques."
+            "Sin mejora: conserva la imagen · Histograma: ecualización global por canal."
         )
-        self.clip_slider.setToolTip("CLAHE clip limit: límite de amplificación del contraste; valores altos exageran el ruido.")
 
         # Convolución
         self.conv_group = self._group("Filtrado y convolución", "grid")
@@ -455,10 +451,7 @@ class ControlsPanel(QWidget):
             self.pool_toggle, self.flatten_toggle,
         ):
             self._switch(widget).toggled.connect(self._emit)
-        self.zoom_slider.valueChanged.connect(self._emit)
-        self.x_slider.valueChanged.connect(self._emit)
-        self.y_slider.valueChanged.connect(self._emit)
-        self.clip_slider.valueChanged.connect(self._emit)
+        self.margin_slider.valueChanged.connect(self._emit)
         self.resize_combo.currentIndexChanged.connect(self._emit)
         self.equal_combo.currentIndexChanged.connect(self._emit)
         self.pool_combo.currentIndexChanged.connect(self._emit)
@@ -493,22 +486,19 @@ class ControlsPanel(QWidget):
             self.changed.emit()
 
     def config(self) -> PipelineConfig:
-        color = next((k for k, b in self.color_buttons.items() if b.isChecked()), "gray")
+        color = next((k for k, b in self.color_buttons.items() if b.isChecked()), "rgb")
         return PipelineConfig(
             color_space=color,
             channels_enabled=self.stage_switches["channels"].isChecked(),
             show_channels=self.stage_switches["channels"].isChecked(),
             roi_enabled=self.stage_switches["roi"].isChecked(),
-            roi_zoom=self.zoom_slider.value() / 100.0,
-            roi_x=self.x_slider.value() / 100.0,
-            roi_y=self.y_slider.value() / 100.0,
+            roi_margin=self.margin_slider.value() / 100.0,
             resize_enabled=self.stage_switches["resize"].isChecked(),
             resize=int(self.resize_combo.currentData()),
             conversion_enabled=self.stage_switches["conversion"].isChecked(),
             enhance_enabled=self.stage_switches["enhance"].isChecked(),
             normalize=self.stage_switches["normalize"].isChecked(),
             equalization=self.equal_combo.currentData(),
-            clahe_clip=self.clip_slider.value() / 10.0,
             conv_enabled=self.stage_switches["conv"].isChecked(),
             kernel_name=self.kernel_combo.currentData(),
             kernel=self.kernel_editor.values(),
@@ -525,7 +515,7 @@ class ControlsPanel(QWidget):
     def set_config(self, cfg: PipelineConfig) -> None:
         self._loading = True
         try:
-            self.color_buttons.get(cfg.color_space, self.color_buttons["gray"]).setChecked(True)
+            self.color_buttons.get(cfg.color_space, self.color_buttons["rgb"]).setChecked(True)
             for key, widget in (
                 ("channels", self.show_channels),
                 ("conversion", self.conversion_toggle),
@@ -540,16 +530,13 @@ class ControlsPanel(QWidget):
             ):
                 enabled = cfg.stage_enabled(key)
                 self._sync_switch(self._switch(widget), enabled)
-            self.zoom_slider.setValue(int(cfg.roi_zoom * 100))
-            self.x_slider.setValue(int(cfg.roi_x * 100))
-            self.y_slider.setValue(int(cfg.roi_y * 100))
+            self.margin_slider.setValue(int(cfg.roi_margin * 100))
             idx = self.resize_combo.findData(cfg.resize)
             if idx >= 0:
                 self.resize_combo.setCurrentIndex(idx)
             idx = self.equal_combo.findData(cfg.equalization)
             if idx >= 0:
                 self.equal_combo.setCurrentIndex(idx)
-            self.clip_slider.setValue(int(cfg.clahe_clip * 10))
             idx = self.kernel_combo.findData(cfg.kernel_name)
             if idx >= 0:
                 self.kernel_combo.setCurrentIndex(idx)
@@ -651,10 +638,10 @@ class ExplorerPage(QWidget):
         # Stage cards: una tarjeta por cada paso real del pipeline
         self.card_original = StageCard(1, "Imagen original", "Adquisición · RGB H×W×3", stage_key="read", can_toggle=False)
         self.card_channels = StageCard(2, "Espacios de color", "Canales R G B · H S V", stage_key="channels", can_toggle=True)
-        self.card_roi = StageCard(3, "Recorte de ROI", "Región de interés", stage_key="roi", can_toggle=True)
+        self.card_roi = StageCard(3, "Segmentación Otsu", "Contorno mayor → ROI", stage_key="roi", can_toggle=True)
         self.card_resize = StageCard(4, "Redimensionado", "Escala uniforme", stage_key="resize", can_toggle=True)
         self.card_convert = StageCard(5, "Conversión de color", "Gris / HSV / RGB", stage_key="conversion", can_toggle=True)
-        self.card_hist = StageCard(6, "Mejora e histograma", "Ecualización / CLAHE", stage_key="enhance", can_toggle=True)
+        self.card_hist = StageCard(6, "Mejora e histograma", "Ecualización de histograma", stage_key="enhance", can_toggle=True)
         self.card_norm = StageCard(7, "Normalización", "uint8 → float32", stage_key="normalize", can_toggle=True)
         self.card_conv = StageCard(8, "Convolución", "Kernel 3×3 + padding + stride", stage_key="conv", can_toggle=True)
         self.card_relu = StageCard(9, "Activación ReLU", "max(0, x)", stage_key="relu", can_toggle=True)
@@ -819,10 +806,10 @@ class ExplorerPage(QWidget):
         self.controls.recalc_btn.setEnabled(not on)
 
     def _update_labels(self) -> None:
-        self.card_roi.setToolTip(f"Zoom {self.cfg.roi_zoom * 100:.0f} %")
+        self.card_roi.setToolTip(f"Margen de caja {self.cfg.roi_margin * 100:.0f} % · Otsu + contorno mayor")
         self.card_resize.setToolTip(f"Redimensionado a {self.cfg.resize}×{self.cfg.resize}")
         self.card_pool.setToolTip(f"{self.cfg.pooling} {self.cfg.pool_size}×{self.cfg.pool_size}")
-        self.card_net.setToolTip(f"Tensor {self.cfg.net_input_size}×{self.cfg.net_input_size} para la CNN")
+        self.card_net.setToolTip(f"Tensor 3 × {self.cfg.net_input_size} × {self.cfg.net_input_size} RGB para la CNN")
 
     def _run_pipeline(self) -> None:
         if not self._current:

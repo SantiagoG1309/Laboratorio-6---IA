@@ -1,7 +1,8 @@
 """Pipeline completo de tratamiento digital de imágenes (Laboratorio 6).
 
-Flujo:  RGB → canales → ROI → redimensionado → conversión de color →
-mejora → normalización → convolución → ReLU → pooling → flatten → red.
+Flujo:  RGB → canales → segmentación Otsu → redimensionado con relleno →
+conversión de color (solo análisis) → mejora → normalización → convolución →
+ReLU → pooling → flatten → red.
 
 Cada etapa se puede activar o desactivar en caliente; cuando se desactiva,
 la imagen pasa sin cambios a la siguiente etapa y así se refleja en el
@@ -183,23 +184,29 @@ def analyze_image(path: str | Path, cfg: PipelineConfig) -> PipelineResult:
     timings["canales"] = (time.perf_counter() - t) * 1000
     add_stage("channels", cfg.channels_enabled, channels, detail, timings["canales"])
 
-    # 3. ROI ------------------------------------------------------------
+    # 3. ROI por segmentación clásica ----------------------------------
     t = time.perf_counter()
     if cfg.roi_enabled:
-        roi_rgb, roi_rect = ops.crop_roi(original, cfg.roi_zoom, cfg.roi_x, cfg.roi_y)
-        roi_detail = f"ROI {roi_rect[2]}×{roi_rect[3]} px en ({roi_rect[0]}, {roi_rect[1]})"
+        roi_rgb, roi_rect = ops.segment_fish_roi(original, cfg.roi_margin)
+        roi_detail = (
+            f"Otsu + contorno mayor · caja {roi_rect[2]}×{roi_rect[3]} px en "
+            f"({roi_rect[0]}, {roi_rect[1]}) · margen {cfg.roi_margin * 100:.0f} %"
+        )
     else:
         roi_rgb, roi_rect = original, (0, 0, original.shape[1], original.shape[0])
         roi_detail = "Etapa desactivada: imagen completa"
     timings["roi"] = (time.perf_counter() - t) * 1000
     add_stage("roi", cfg.roi_enabled, roi_rgb, roi_detail, timings["roi"])
 
-    # 4. Redimensionado -------------------------------------------------
+    # 4. Redimensionado (conserva la proporción) ------------------------
     t = time.perf_counter()
     capped = False
     if cfg.resize_enabled:
-        work_rgb = ops.resize(roi_rgb, cfg.resize)
-        resize_detail = f"{roi_rgb.shape[1]}×{roi_rgb.shape[0]} → {cfg.resize}×{cfg.resize}"
+        work_rgb = ops.resize_with_pad(roi_rgb, cfg.resize)
+        resize_detail = (
+            f"{roi_rgb.shape[1]}×{roi_rgb.shape[0]} → {cfg.resize}×{cfg.resize} "
+            "con relleno (sin deformar el pez)"
+        )
     else:
         work_rgb, capped = _cap_work(roi_rgb)
         resize_detail = "Etapa desactivada: se conserva la resolución de la ROI"
@@ -228,14 +235,12 @@ def analyze_image(path: str | Path, cfg: PipelineConfig) -> PipelineResult:
     gray_full = ops.to_gray(converted)
     hist_before = ops.histogram(gray_full)
     if cfg.enhance_enabled:
-        if converted.ndim == 2:
-            processed_u8 = ops.equalize(converted, cfg.equalization, cfg.clahe_clip)
-        else:
-            processed_u8 = np.stack(
-                [ops.equalize(converted[:, :, c], cfg.equalization, cfg.clahe_clip) for c in range(3)],
-                axis=2,
-            )
-        enhance_detail = f"{cfg.equalization.upper()} · clip {cfg.clahe_clip:g}"
+        processed_u8 = ops.equalize_rgb(converted, cfg.equalization)
+        enhance_detail = (
+            "Ecualización de histograma por canal"
+            if cfg.equalization == "hist"
+            else "Sin mejora"
+        )
     else:
         processed_u8 = np.clip(converted, 0, 255).astype(np.uint8)
         enhance_detail = "Etapa desactivada: sin ecualización"
@@ -321,15 +326,24 @@ def analyze_image(path: str | Path, cfg: PipelineConfig) -> PipelineResult:
     add_stage("flatten", bool(cfg.flatten), flat if flat.size else pooled, flat_detail, timings["flatten"])
 
     # 12. Entrada a la red ---------------------------------------------
-    # Se construye exactamente como en el entrenamiento: resize → gris →
-    # normalización [0, 1]; así la tarjeta muestra lo que realmente ve la CNN.
+    # La CNN siempre recibe RGB (3 × N × N), aunque las etapas educativas
+    # anteriores se usen para comparar gris/HSV. Se aplica el mismo
+    # redimensionado con relleno y la misma ecualización que en el entrenamiento.
     t = time.perf_counter()
     net_size = max(16, int(cfg.net_input_size))
-    net_u8 = ops.to_gray(processed_u8)
-    net_input = ops.normalize01(ops.resize(net_u8, net_size)).astype(np.float32)
-    net_display = ops.apply_colormap(net_input, "viridis")
+    net_rgb = ops.resize_with_pad(roi_rgb, net_size)
+    if cfg.enhance_enabled and cfg.equalization == "hist":
+        net_rgb = ops.equalize_rgb(net_rgb, "hist")
+    net_input = np.transpose(
+        ops.normalize01(net_rgb).astype(np.float32), (2, 0, 1)
+    )
+    net_display = np.clip(net_input.transpose(1, 2, 0) * 255.0, 0, 255).astype(np.uint8)
     timings["net"] = (time.perf_counter() - t) * 1000
-    add_stage("net", True, net_input, f"Tensor {net_size}×{net_size} · float32 [0, 1]", timings["net"])
+    add_stage(
+        "net", True, net_input,
+        f"Tensor 3 × {net_size} × {net_size} · float32 [0, 1]",
+        timings["net"],
+    )
 
     timings["total"] = (time.perf_counter() - t0) * 1000
     return PipelineResult(
@@ -368,25 +382,24 @@ def analyze_image(path: str | Path, cfg: PipelineConfig) -> PipelineResult:
 def preprocess_for_training(
     path: str | Path,
     size: int,
-    equalization: str = "clahe",
-    clahe_clip: float = 2.0,
+    equalization: str = "hist",
     roi: bool = False,
-    roi_zoom: float = 0.92,
-    roi_x: float = 0.5,
-    roi_y: float = 0.5,
+    roi_margin: float = 0.15,
 ) -> np.ndarray:
     """Carga y preprocesa una imagen para la red neuronal.
 
-    Misma secuencia que el pipeline visible: ROI → resize → gris → mejora →
-    normalización. Devuelve un arreglo float32 (size, size) en [0, 1].
+    Misma secuencia que el pipeline visible: lectura RGB → segmentación Otsu
+    (opcional) → redimensionado con relleno conservando la proporción →
+    ecualización de histograma (opcional) → normalización. Devuelve un arreglo
+    float32 (3, size, size) en [0, 1]: la CNN trabaja siempre en color.
     """
     rgb = ops.imread_rgb(path)
     if roi:
-        rgb, _ = ops.crop_roi(rgb, roi_zoom, roi_x, roi_y)
-    rgb = ops.resize(rgb, size)
-    gray = ops.to_gray(rgb)
-    gray = ops.equalize(gray, equalization, clahe_clip)
-    return ops.normalize01(gray).astype(np.float32)
+        rgb, _ = ops.segment_fish_roi(rgb, roi_margin)
+    rgb = ops.resize_with_pad(rgb, size)
+    if equalization == "hist":
+        rgb = ops.equalize_rgb(rgb, "hist")
+    return np.transpose(ops.normalize01(rgb).astype(np.float32), (2, 0, 1))
 
 
 def overlay_roi(rgb: np.ndarray, rect: tuple[int, int, int, int]) -> np.ndarray:

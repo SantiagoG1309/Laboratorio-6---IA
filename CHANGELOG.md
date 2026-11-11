@@ -1,5 +1,30 @@
 # Historial de cambios
 
+## v1.2.0 — 2026-11-10
+
+### Aplicación
+- Nueva pestaña **Predicción**: arrastra o elige cualquier imagen y obtén la clase estimada, su
+  confianza y las tres probabilidades Softmax, reutilizando el mismo pipeline y modelo.
+- **Pipeline**: la ROI centrada se sustituye por **segmentación de Otsu** (gris → umbral →
+  limpieza morfológica → contorno mayor → caja envolvente con margen) en la vista y en el
+  entrenamiento. Se eliminó el control de zoom/centro y se añadió el **margen de la caja**.
+- **Mejora de contraste**: se retiró **CLAHE** por completo; quedan «sin mejora» y
+  **ecualización global del histograma por canal**.
+- El redimensionado conserva la proporción del pez y rellena el cuadrado (sin deformar).
+- La CNN y todo el flujo de entrenamiento trabajan en **RGB (3 canales)**; la salida mantiene
+  **3 neuronas**, una por clase.
+- Tooltips, glosario, presets y textos de etapas actualizados; el diagrama, el laboratorio
+  numérico y la exportación reflejan el tensor RGB.
+
+### Núcleo
+- `segment_fish_roi`, `resize_with_pad` y `equalize_rgb` en `core/image_ops.py`.
+- Formato de modelo v3 con `in_channels = 3`; los modelos antiguos en escala de grises se
+  detectan y se ignoran con un aviso claro.
+- Aumento de datos adaptado a tensores `(N, 3, H, W)`.
+
+### Distribución
+- Modelo incluido reentrenado en RGB y versión de Windows `1.2.0.0`.
+
 ## v1.1.1 — 2026-11-08
 
 ### Aplicación

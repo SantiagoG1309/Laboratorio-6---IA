@@ -262,11 +262,12 @@ class ArchitecturePage(QWidget):
         ))
 
         self.combo_channels = QComboBox()
-        self.combo_channels.addItem("1 · grises", 1)
         self.combo_channels.addItem("3 · RGB", 3)
+        self.combo_channels.setEnabled(False)
+        self.combo_channels.setToolTip("La CNN trabaja siempre en color: 3 canales R, G y B.")
         params_flow.addWidget(_field(
             "Canales:", self.combo_channels,
-            "Canales de entrada: 1 si el pipeline convierte a grises, 3 si conserva color.",
+            "Entrada fija de 3 canales RGB: el color diferencia trucha, mojarra y pavón.",
         ))
 
         self.spin_f1 = QSpinBox()
@@ -660,7 +661,7 @@ class ArchitecturePage(QWidget):
 
         num_b = int(self.spin_blocks.value())
         size = int(self.combo_size.currentData() or 48)
-        in_ch = int(self.combo_channels.currentData() or 1)
+        in_ch = int(self.combo_channels.currentData() or 3)
         f1 = int(self.spin_f1.value())
         k1 = int(self.combo_k1.currentData() or 3)
         s1 = int(self.spin_s1.value())
@@ -672,7 +673,7 @@ class ArchitecturePage(QWidget):
 
         self.lbl_table_subtitle.setText(
             f"Flujo secuencial: la salida de cada etapa se convierte en la entrada exacta de la etapa siguiente · "
-            f"{num_b} bloque(s) Conv+Pool · Entrada {size}×{size}×{in_ch} · Capa oculta de {hidden} neuronas · 3 clases (Trucha, Mojarra, Pavón)"
+            f"{num_b} bloque(s) Conv+Pool · Entrada {size}×{size}×{in_ch} RGB · Capa oculta de {hidden} neuronas · 3 clases (Trucha, Mojarra, Pavón) · salida de 3 neuronas"
         )
 
         # Generar arquitectura fiel al diseño de la red para peces
@@ -709,7 +710,7 @@ class ArchitecturePage(QWidget):
                 sz_idx = self.combo_size.findData(48)
                 if sz_idx >= 0:
                     self.combo_size.setCurrentIndex(sz_idx)
-                self.combo_channels.setCurrentIndex(0)  # 1 canal (grises)
+                self.combo_channels.setCurrentIndex(0)  # 3 canales RGB
                 self.spin_f1.setValue(6)
                 self.combo_k1.setCurrentIndex(0)  # 3x3
                 self.spin_s1.setValue(1)
@@ -722,7 +723,7 @@ class ArchitecturePage(QWidget):
                 sz_idx = self.combo_size.findData(48)
                 if sz_idx >= 0:
                     self.combo_size.setCurrentIndex(sz_idx)
-                self.combo_channels.setCurrentIndex(0)
+                self.combo_channels.setCurrentIndex(0)  # 3 canales RGB
                 self.spin_f1.setValue(6)
                 self.combo_k1.setCurrentIndex(0)
                 self.spin_s1.setValue(1)
@@ -737,7 +738,7 @@ class ArchitecturePage(QWidget):
                 sz_idx = self.combo_size.findData(48)
                 if sz_idx >= 0:
                     self.combo_size.setCurrentIndex(sz_idx)
-                self.combo_channels.setCurrentIndex(0)  # 1 canal (grises)
+                self.combo_channels.setCurrentIndex(0)  # 3 canales RGB
                 self.spin_f1.setValue(6)
                 self.combo_k1.setCurrentIndex(0)  # 3x3
                 self.spin_s1.setValue(1)
@@ -996,7 +997,7 @@ class ArchitecturePage(QWidget):
                 self.combo_preset.setCurrentIndex(p_idx)
 
             self.spin_blocks.setValue(2)
-            self.combo_channels.setCurrentIndex(0)  # 1 canal (escala de grises)
+            self.combo_channels.setCurrentIndex(0)  # 3 canales RGB
 
             # Seleccionar tamaño de entrada
             sz_idx = self.combo_size.findData(int(cfg.input_size))
@@ -1095,17 +1096,16 @@ class ArchitecturePage(QWidget):
         if sample is not None:
             explorer = getattr(self.main, "explorer", None)
             pcfg = getattr(explorer, "cfg", None)
-            eq = getattr(pcfg, "equalization", "clahe")
-            clip = float(getattr(pcfg, "clahe_clip", 2.0))
+            eq = getattr(pcfg, "equalization", "hist")
             roi = bool(getattr(pcfg, "roi_enabled", False))
-            zoom = float(getattr(pcfg, "roi_zoom", 1.0))
-            rx = float(getattr(pcfg, "roi_x", 0.5))
-            ry = float(getattr(pcfg, "roi_y", 0.5))
-            key = (str(sample.path), size, eq, clip, roi, zoom, rx, ry)
+            margin = float(getattr(pcfg, "roi_margin", 0.15))
+            key = (str(sample.path), size, eq, roi, margin)
             if getattr(self, "_lab_input_key", None) == key and self._lab_input is not None:
                 return self._lab_input, int(sample.label)
             try:
-                arr = preprocess_for_training(sample.path, size, eq, clip, roi, zoom, rx, ry)
+                arr = preprocess_for_training(
+                    sample.path, size, eq, roi=roi, roi_margin=margin
+                )
                 self._lab_input = arr
                 self._lab_input_key = key
                 return arr, int(sample.label)
@@ -1119,7 +1119,7 @@ class ArchitecturePage(QWidget):
             return np.asarray(net_input, dtype=np.float32), None
 
         rng = np.random.default_rng(7)
-        return rng.random((size, size), dtype=np.float32), None
+        return rng.random((3, size, size), dtype=np.float32), None
 
     def _on_lab_stage_changed(self) -> None:
         stage = str(self.combo_stage.currentData() or "conv1")

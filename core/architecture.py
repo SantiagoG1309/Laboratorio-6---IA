@@ -12,6 +12,8 @@ from typing import Any
 
 import numpy as np
 
+from core.config import INPUT_CHANNELS
+
 
 # ---------------------------------------------------------------------------
 # Utilidades de formato
@@ -116,7 +118,7 @@ def _out_size(size: int, kernel: int, padding: int, stride: int) -> int:
 def cnn_architecture_rows(
     input_size: int = 48,
     num_blocks: int = 2,
-    in_channels: int = 1,
+    in_channels: int = INPUT_CHANNELS,
     filters_per_block: tuple[int, ...] | list[int] = (6, 12, 24),
     kernel_sizes: tuple[int, ...] | list[int] = (3, 3, 3),
     strides: tuple[int, ...] | list[int] = (1, 1, 1),
@@ -141,6 +143,8 @@ def cnn_architecture_rows(
       Conv_total = H_out * W_out * Filtros
       Pool_total = HP_out * WP_out * Filtros
       hidden_params = (unidades_entrada × neuronas_ocultas) + neuronas_ocultas
+
+    La capa de salida tiene una neurona por clase; con 3 clases son 3 logits.
     """
     blocks = max(1, min(3, int(num_blocks)))
     size = max(8, int(input_size))
@@ -312,7 +316,7 @@ def cnn_architecture_rows(
     ))
     prev_out_repr = hidden_out_repr
 
-    # 5. Capa de salida (proyección a los logits de las tres clases)
+    # 5. Capa de salida (una neurona por clase)
     sm_params = n_out * hid + n_out
     logits_out_repr = f"{n_out} logits  ({n_out})"
     rows.append(ArchRow(
@@ -372,7 +376,7 @@ def cnn_rows(
     kernel: int = 3,
     padding: int = 1,
     pool: int = 2,
-    in_ch: int = 1,
+    in_ch: int = INPUT_CHANNELS,
 ) -> list[ArchRow]:
     """Arquitectura viva de la CNN para clasificación de peces (NumPy puro)."""
     return cnn_architecture_rows(

@@ -27,11 +27,11 @@ from core.training import train_model  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Entrena y guarda el modelo incluido de AquaCNN")
-    parser.add_argument("--epochs", type=int, default=80)
+    parser.add_argument("--epochs", type=int, default=120)
     parser.add_argument("--size", type=int, default=48, choices=(32, 40, 48, 64))
     parser.add_argument("--batch", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=0.01)
-    parser.add_argument("--wd", type=float, default=1e-4)
+    parser.add_argument("--lr", type=float, default=0.005)
+    parser.add_argument("--wd", type=float, default=3e-4)
     parser.add_argument("--hidden", type=int, default=64)
     parser.add_argument("--filters", type=int, default=6)
     parser.add_argument("--filters2", type=int, default=12)

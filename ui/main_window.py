@@ -37,6 +37,7 @@ from ui.pages.about import AboutPage
 from ui.pages.architecture import ArchitecturePage
 from ui.pages.dashboard import DashboardPage
 from ui.pages.explorer import ExplorerPage
+from ui.pages.predict import PredictPage
 from ui.pages.results import ResultsPage
 from ui.pages.settings import SettingsPage
 from ui.pages.training import TrainingPage
@@ -136,6 +137,7 @@ class MainWindow(QMainWindow):
         ("Arquitectura NN", "Diagrama de neuronas, tablas vivas y laboratorio numérico"),
         ("Entrenamiento", "Configura y monitorea la red neuronal en segundo plano"),
         ("Resultados", "Métricas, matriz de confusión y predicciones"),
+        ("Predicción", "Arrastra cualquier imagen y obtén la clase con su confianza"),
         ("Acerca del laboratorio", "Teoría, fórmulas y créditos"),
         ("Configuración", "Apariencia, animaciones, tooltips y preferencias"),
     ]
@@ -332,11 +334,12 @@ class MainWindow(QMainWindow):
         self.architecture = ArchitecturePage(self)
         self.training = TrainingPage(self)
         self.results = ResultsPage(self)
+        self.predict = PredictPage(self)
         self.about = AboutPage()
         self.settings_page = SettingsPage(self)
         for page in (
             self.dashboard, self.explorer, self.architecture, self.training,
-            self.results, self.about, self.settings_page,
+            self.results, self.predict, self.about, self.settings_page,
         ):
             self.stack.addWidget(page)
         right_l.addWidget(self.stack, 1)
@@ -428,7 +431,9 @@ class MainWindow(QMainWindow):
         self.settings.setValue("last_page", index)
         if index == 2:
             self.architecture.refresh_from_training()
-        elif index == 6:
+        elif index == 5:
+            self.predict.refresh_model()
+        elif index == 7:
             self.settings_page.refresh()
 
     def open_explorer(self, path: str | None = None) -> None:

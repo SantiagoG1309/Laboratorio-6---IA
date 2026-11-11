@@ -92,7 +92,7 @@ def run_tests():
         res = analyze_image(sample_path, cfg)
         assert res is not None
         assert res.stage_states[key] is False, f"La etapa '{key}' no figura como desactivada en el resultado"
-        assert res.net_input.shape == (cfg.net_input_size, cfg.net_input_size)
+        assert res.net_input.shape == (3, cfg.net_input_size, cfg.net_input_size)
 
     # Probar apagando múltiples etapas a la vez (por ejemplo: sin ROI, sin ecualización, sin conv, sin pool)
     multi_cfg = PipelineConfig()
@@ -105,7 +105,7 @@ def run_tests():
     assert multi_res.stage_states["enhance"] is False
     assert multi_res.stage_states["conv"] is False
     assert multi_res.stage_states["pool"] is False
-    assert multi_res.net_input.shape == (multi_cfg.net_input_size, multi_cfg.net_input_size)
+    assert multi_res.net_input.shape == (3, multi_cfg.net_input_size, multi_cfg.net_input_size)
     print("   -> analyze_image funcionó correctamente con etapas desactivadas individual y conjuntamente.")
 
     print("4. Verificando persistencia entre múltiples imágenes...")

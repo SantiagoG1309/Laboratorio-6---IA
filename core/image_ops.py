@@ -110,20 +110,67 @@ def channel_to_rgb(channel: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Geometría
 # ---------------------------------------------------------------------------
-def crop_roi(rgb: np.ndarray, zoom: float = 1.0, cx: float = 0.5, cy: float = 0.5) -> tuple[np.ndarray, tuple[int, int, int, int]]:
-    """Recorta una ROI cuadrada centrada en (cx, cy) normalizado.
+def segment_fish_roi(rgb: np.ndarray, margin: float = 0.15) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+    """Localiza el pez con el umbral de Otsu y devuelve su caja con margen.
 
-    ``zoom`` es la fracción del lado menor que se conserva (1.0 = imagen completa).
-    Devuelve la ROI y el rectángulo (x, y, w, h) en coordenadas originales.
+    Pasos: gris → desenfoque → umbral de Otsu → limpieza morfológica →
+    contorno más grande → caja envolvente. Se prueban las dos polaridades del
+    umbral y se elige la que produce un objeto más grande sin pegarse a todos
+    los bordes. Si no hay un contorno fiable, se conserva la imagen completa.
     """
-    h, w = rgb.shape[:2]
-    side = max(8, int(round(min(h, w) * float(np.clip(zoom, 0.1, 1.0)))))
-    side = min(side, w, h)
-    x = int(round(cx * w - side / 2))
-    y = int(round(cy * h - side / 2))
-    x = int(np.clip(x, 0, w - side))
-    y = int(np.clip(y, 0, h - side))
-    return rgb[y:y + side, x:x + side], (x, y, side, side)
+    arr = np.asarray(rgb)
+    if arr.size == 0:
+        return arr, (0, 0, 0, 0)
+    h, w = arr.shape[:2]
+    gray = to_gray(arr)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+
+    def largest(mask: np.ndarray):
+        clean = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        clean = cv2.morphologyEx(clean, cv2.MORPH_CLOSE, kernel)
+        contours, _ = cv2.findContours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return None
+        return max(contours, key=cv2.contourArea)
+
+    # Otsu puede dejar el pez en blanco o en negro según la foto, así que se
+    # prueban las dos polaridades. El fondo suele ser el contorno que ocupa
+    # casi todo el marco: se descarta por área y por contacto con los bordes.
+    best = None
+    best_score = -1.0
+    total = float(max(1, w * h))
+    for mask in (binary, cv2.bitwise_not(binary)):
+        contour = largest(mask)
+        if contour is None:
+            continue
+        x, y, cw, ch = cv2.boundingRect(contour)
+        if cw < 4 or ch < 4:
+            continue
+        area_frac = cv2.contourArea(contour) / total
+        frac = (cw * ch) / total
+        if area_frac < 0.03 or frac < 0.05:
+            continue  # ruido o mota, no un pez
+        border = int(x <= 2) + int(y <= 2) + int(x + cw >= w - 2) + int(y + ch >= h - 2)
+        solidity = area_frac / max(frac, 1e-6)
+        # Un pez llena su caja de forma razonable y no toca todos los bordes.
+        score = solidity - 0.15 * border - 0.60 * max(0.0, frac - 0.85)
+        if score > best_score:
+            best_score = score
+            best = (x, y, cw, ch)
+
+    if best is None:
+        return arr, (0, 0, w, h)
+
+    x, y, cw, ch = best
+    mx = int(round(cw * float(np.clip(margin, 0.0, 0.4))))
+    my = int(round(ch * float(np.clip(margin, 0.0, 0.4))))
+    x0 = max(0, x - mx)
+    y0 = max(0, y - my)
+    x1 = min(w, x + cw + mx)
+    y1 = min(h, y + ch + my)
+    return arr[y0:y1, x0:x1], (x0, y0, x1 - x0, y1 - y0)
 
 
 def resize(img: np.ndarray, size: int) -> np.ndarray:
@@ -132,6 +179,32 @@ def resize(img: np.ndarray, size: int) -> np.ndarray:
         return np.zeros((side, side) + tuple(img.shape[2:]), np.uint8)
     interp = cv2.INTER_AREA if max(img.shape[:2]) > side else cv2.INTER_CUBIC
     return cv2.resize(img, (side, side), interpolation=interp)
+
+
+def resize_with_pad(img: np.ndarray, size: int, pad: int | float = 0) -> np.ndarray:
+    """Redimensiona conservando la proporción y rellena hasta un cuadrado.
+
+    El pez nunca se deforma: se escala por el lado que más crece y el espacio
+    restante se completa con ``pad`` (negro por defecto), centrando la imagen.
+    """
+    side = max(8, int(size))
+    arr = np.asarray(img)
+    if arr.size == 0:
+        return np.full((side, side), pad, dtype=np.uint8)
+    h, w = arr.shape[:2]
+    scale = min(side / float(w), side / float(h))
+    nw = max(1, int(round(w * scale)))
+    nh = max(1, int(round(h * scale)))
+    interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_CUBIC
+    resized = cv2.resize(arr, (nw, nh), interpolation=interp)
+    if arr.ndim == 2:
+        canvas = np.full((side, side), pad, dtype=arr.dtype)
+    else:
+        canvas = np.full((side, side, arr.shape[2]), pad, dtype=arr.dtype)
+    x = (side - nw) // 2
+    y = (side - nh) // 2
+    canvas[y:y + nh, x:x + nw] = resized
+    return canvas
 
 
 def normalize01(gray: np.ndarray) -> np.ndarray:
@@ -184,17 +257,25 @@ def histogram(gray: np.ndarray, bins: int = 256) -> np.ndarray:
     return hist.flatten()
 
 
-def equalize(gray: np.ndarray, mode: str = "hist", clip_limit: float = 2.0) -> np.ndarray:
+def equalize(gray: np.ndarray, mode: str = "hist") -> np.ndarray:
+    """Ecualización global del histograma."""
     arr = np.asarray(gray)
     if arr.size and np.issubdtype(arr.dtype, np.floating) and float(np.nanmax(arr)) <= 1.5:
         arr = arr * 255.0
     g = np.clip(arr, 0, 255).astype(np.uint8)
     if mode == "hist":
         return cv2.equalizeHist(g)
-    if mode == "clahe":
-        clahe = cv2.createCLAHE(clipLimit=max(0.5, float(clip_limit)), tileGridSize=(8, 8))
-        return clahe.apply(g)
     return g
+
+
+def equalize_rgb(rgb: np.ndarray, mode: str = "hist") -> np.ndarray:
+    """Aplica la ecualización de histograma a cada canal de una imagen RGB."""
+    arr = np.asarray(rgb)
+    if arr.ndim == 2:
+        return equalize(arr, mode)
+    if mode != "hist":
+        return np.clip(arr, 0, 255).astype(np.uint8)
+    return np.stack([equalize(arr[:, :, c], mode) for c in range(arr.shape[2])], axis=2)
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ from typing import Any
 APP_NAME = "AquaCNN"
 APP_TITLE = "AquaCNN · Laboratorio 6"
 APP_SUBTITLE = "Tratamiento de imágenes para la clasificación de peces"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 
 UNIVERSITY = "Universidad de Cundinamarca"
 UNIVERSITY_CAMPUS = "Sede Facatativá"
@@ -22,6 +22,8 @@ APP_AUTHORS = (
 
 CLASSES = ("trucha", "mojarra", "pavon")
 CLASS_LABELS = {"trucha": "Trucha", "mojarra": "Mojarra", "pavon": "Pavón"}
+# La red recibe color (3 canales) y devuelve una neurona de salida por clase.
+INPUT_CHANNELS = 3
 CLASS_SCIENTIFIC = {
     "trucha": "Oncorhynchus mykiss",
     "mojarra": "Oreochromis niloticus",
@@ -94,7 +96,6 @@ COLOR_SPACES = {
 EQUALIZATIONS = {
     "none": "Sin mejora",
     "hist": "Ecualización de histograma",
-    "clahe": "CLAHE (adaptativa)",
 }
 POOLINGS = {"max": "Max Pooling", "avg": "Average Pooling", "none": "Sin pooling"}
 
@@ -121,11 +122,11 @@ PIPELINE_STAGES: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "roi",
-        "label": "Recorte de ROI",
-        "short": "Región de interés",
+        "label": "Segmentación Otsu",
+        "short": "Contorno mayor → ROI",
         "icon": "maximize",
         "always": False,
-        "description": "Recorte cuadrado centrado en el pez; elimina fondo y bordes.",
+        "description": "Umbral de Otsu → contorno más grande → caja con margen; localiza el pez y elimina el fondo.",
     },
     {
         "key": "resize",
@@ -133,7 +134,7 @@ PIPELINE_STAGES: tuple[dict[str, Any], ...] = (
         "short": "Escala uniforme",
         "icon": "grid",
         "always": False,
-        "description": "Reescala la ROI a N×N píxeles con interpolación de área o cúbica.",
+        "description": "Reescala la ROI a N×N conservando la proporción del pez y rellena el resto.",
     },
     {
         "key": "conversion",
@@ -146,10 +147,10 @@ PIPELINE_STAGES: tuple[dict[str, Any], ...] = (
     {
         "key": "enhance",
         "label": "Mejora de contraste",
-        "short": "Histograma / CLAHE",
+        "short": "Histograma",
         "icon": "wave",
         "always": False,
-        "description": "Ecualización global o adaptativa (CLAHE) del canal de trabajo.",
+        "description": "Ecualización global del histograma sobre cada canal RGB.",
     },
     {
         "key": "normalize",
@@ -194,10 +195,10 @@ PIPELINE_STAGES: tuple[dict[str, Any], ...] = (
     {
         "key": "net",
         "label": "Entrada a la red",
-        "short": "Tensor de la CNN",
+        "short": "Tensor RGB de la CNN",
         "icon": "brain",
         "always": True,
-        "description": "Reescala el resultado al tamaño de entrada del clasificador neuronal.",
+        "description": "Tensor RGB (3 × N × N) normalizado que consume el clasificador neuronal.",
     },
 )
 
@@ -271,13 +272,11 @@ class PipelineConfig:
     y observar su efecto sobre las siguientes etapas.
     """
 
-    color_space: str = "gray"       # rgb | gray | hsv
+    color_space: str = "rgb"        # rgb | gray | hsv (solo análisis visual)
     channels_enabled: bool = True
 
     roi_enabled: bool = True
-    roi_zoom: float = 1.0
-    roi_x: float = 0.5
-    roi_y: float = 0.5
+    roi_margin: float = 0.15        # margen alrededor de la caja del pez (0-0.4)
     resize_enabled: bool = True
     resize: int = 128
 
@@ -285,8 +284,7 @@ class PipelineConfig:
     enhance_enabled: bool = True
     normalize: bool = True
 
-    equalization: str = "clahe"
-    clahe_clip: float = 2.0
+    equalization: str = "hist"
 
     conv_enabled: bool = True
     kernel_name: str = "vertical"
@@ -352,17 +350,14 @@ class PipelineConfig:
         ):
             clean[key] = _as_bool(clean.get(key), True)
 
-        clean["color_space"] = _choice(clean.get("color_space"), COLOR_SPACES, "gray")
-        clean["equalization"] = _choice(clean.get("equalization"), EQUALIZATIONS, "clahe")
+        clean["color_space"] = _choice(clean.get("color_space"), COLOR_SPACES, "rgb")
+        clean["equalization"] = _choice(clean.get("equalization"), EQUALIZATIONS, "hist")
         clean["pooling"] = _choice(clean.get("pooling"), POOLINGS, "max")
         if clean["pooling"] == "none":
             clean["pool_enabled"] = False
 
-        clean["roi_zoom"] = _as_float(clean.get("roi_zoom"), 1.0, 0.1, 1.0)
-        clean["roi_x"] = _as_float(clean.get("roi_x"), 0.5, 0.0, 1.0)
-        clean["roi_y"] = _as_float(clean.get("roi_y"), 0.5, 0.0, 1.0)
+        clean["roi_margin"] = _as_float(clean.get("roi_margin"), 0.15, 0.0, 0.40)
         clean["resize"] = _as_int(clean.get("resize"), 128, 32, 512)
-        clean["clahe_clip"] = _as_float(clean.get("clahe_clip"), 2.0, 0.5, 20.0)
         clean["padding"] = _as_int(clean.get("padding"), 1, 0, 8)
         clean["stride"] = _as_int(clean.get("stride"), 1, 1, 8)
         clean["pool_size"] = _as_int(clean.get("pool_size"), 2, 1, 8)
@@ -394,10 +389,10 @@ class TrainingConfig:
     augmentation: bool = True
     class_weights: bool = True
     roi_crop: bool = True
+    roi_margin: float = 0.15
     seed: int = 42
 
-    equalization: str = "clahe"
-    clahe_clip: float = 2.0
+    equalization: str = "hist"
     train_ratio: float = 0.70
     val_ratio: float = 0.15
     test_ratio: float = 0.15
@@ -424,8 +419,8 @@ class TrainingConfig:
         clean["weight_decay"] = _as_float(clean.get("weight_decay"), 1e-4, 0.0, 1.0)
         clean["dropout"] = _as_float(clean.get("dropout"), 0.25, 0.0, 0.9)
         clean["label_smoothing"] = _as_float(clean.get("label_smoothing"), 0.05, 0.0, 0.5)
-        clean["equalization"] = _choice(clean.get("equalization"), EQUALIZATIONS, "clahe")
-        clean["clahe_clip"] = _as_float(clean.get("clahe_clip"), 2.0, 0.5, 20.0)
+        clean["equalization"] = _choice(clean.get("equalization"), EQUALIZATIONS, "hist")
+        clean["roi_margin"] = _as_float(clean.get("roi_margin"), 0.15, 0.0, 0.40)
         for key in ("augmentation", "class_weights", "roi_crop"):
             clean[key] = _as_bool(clean.get(key), True)
         clean["train_ratio"] = _as_float(clean.get("train_ratio"), 0.70, 0.0, 1.0)

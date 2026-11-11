@@ -16,7 +16,7 @@ from ui.theme import apply_theme
 
 out = ROOT / "docs" / "capturas"
 out.mkdir(parents=True, exist_ok=True)
-NAMES = ["inicio", "pipeline", "arquitectura", "entrenamiento", "resultados"]
+NAMES = ["inicio", "pipeline", "arquitectura", "entrenamiento", "resultados", "prediccion"]
 app = QApplication(sys.argv)
 apply_theme(app)
 win = MainWindow()
@@ -39,13 +39,17 @@ def poll():
 
 
 def show_page(i: int):
-    if i >= 5:
+    if i >= len(NAMES):
         win.close()
         app.exit(0)
         return
     win.goto_page(i)
+    if i == 5:
+        sample = sorted((ROOT / "Dataset Imagenes" / "trucha").glob("*.jpg"))
+        if sample:
+            win.predict.set_image(str(sample[0]))
     app.processEvents()
-    delay = 2600 if i == 1 else (3500 if i == 4 else 900)
+    delay = 2600 if i == 1 else (3500 if i == 4 else (1800 if i == 5 else 900))
     QTimer.singleShot(delay, lambda idx=i: capture(idx))
 
 

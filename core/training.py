@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 
 from core.cnn import build_model, make_optimizer
-from core.config import CLASS_LABELS, CLASSES, TrainingConfig
+from core.config import CLASS_LABELS, CLASSES, INPUT_CHANNELS, TrainingConfig
 from core.dataset import Sample
 from core.metrics import evaluate_predictions
 from core.pipeline import preprocess_for_training
@@ -47,7 +47,9 @@ def load_split_arrays(
     Devuelve ``(X, y, muestras_válidas)`` para que rutas y etiquetas sigan
     alineadas aunque alguna imagen no se pueda leer.
     """
-    X = np.zeros((len(samples), 1, cfg.input_size, cfg.input_size), dtype=np.float32)
+    X = np.zeros(
+        (len(samples), INPUT_CHANNELS, cfg.input_size, cfg.input_size), dtype=np.float32
+    )
     y = np.zeros(len(samples), dtype=np.int64)
     kept: list[Sample] = []
     skipped = 0
@@ -57,10 +59,10 @@ def load_split_arrays(
                 s.path,
                 size=cfg.input_size,
                 equalization=cfg.equalization,
-                clahe_clip=cfg.clahe_clip,
                 roi=cfg.roi_crop,
+                roi_margin=cfg.roi_margin,
             )
-            X[len(kept), 0] = img
+            X[len(kept)] = img
             y[len(kept)] = s.label
             kept.append(s)
         except (ValueError, OSError, cv2.error):
@@ -93,25 +95,30 @@ def _augment_batch(Xb: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     if out.ndim != 4:
         return out
     for i in range(n):
-        img = out[i, 0]
-        h, w = img.shape
+        img = out[i]
+        h, w = img.shape[1:]
         if rng.random() < 0.5:
-            img = img[:, ::-1]
+            img = img[:, :, ::-1]
         if rng.random() < 0.5:
             angle = float(rng.uniform(-12.0, 12.0))
             scale = float(rng.uniform(0.92, 1.08))
             matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, scale)
-            img = cv2.warpAffine(
-                img, matrix, (w, h),
+            # OpenCV espera H×W×C: se llevan los canales al final y se devuelven.
+            hwc = np.transpose(img, (1, 2, 0))
+            hwc = cv2.warpAffine(
+                hwc, matrix, (w, h),
                 flags=cv2.INTER_LINEAR,
                 borderMode=cv2.BORDER_REFLECT_101,
             )
+            img = np.transpose(hwc, (2, 0, 1))
         if rng.random() < 0.35:
             side = int(round(min(h, w) * float(rng.uniform(0.80, 1.0))))
             side = max(8, side)
             x0 = int(rng.integers(0, max(1, w - side + 1)))
             y0 = int(rng.integers(0, max(1, h - side + 1)))
-            img = cv2.resize(img[y0:y0 + side, x0:x0 + side], (w, h), interpolation=cv2.INTER_LINEAR)
+            patch = np.transpose(img[:, y0:y0 + side, x0:x0 + side], (1, 2, 0))
+            patch = cv2.resize(patch, (w, h), interpolation=cv2.INTER_LINEAR)
+            img = np.transpose(patch, (2, 0, 1))
         if rng.random() < 0.5:
             img = img * float(rng.uniform(0.85, 1.15)) + float(rng.uniform(-0.06, 0.06))
         if rng.random() < 0.3:
@@ -122,8 +129,8 @@ def _augment_batch(Xb: np.ndarray, rng: np.random.Generator) -> np.ndarray:
             x0 = int(rng.integers(0, max(1, w - cw + 1)))
             y0 = int(rng.integers(0, max(1, h - ch + 1)))
             img = img.copy()
-            img[y0:y0 + ch, x0:x0 + cw] = 0.0
-        out[i, 0] = np.clip(img, 0.0, 1.0)
+            img[:, y0:y0 + ch, x0:x0 + cw] = 0.0
+        out[i] = np.clip(img, 0.0, 1.0)
     return out
 
 
@@ -303,12 +310,14 @@ def predict_paths(model, paths: list[str], cfg: TrainingConfig, batch: int = 32)
     step = max(1, int(batch))
     for start in range(0, len(paths), step):
         chunk = paths[start:start + step]
-        X = np.zeros((len(chunk), 1, cfg.input_size, cfg.input_size), dtype=np.float32)
+        X = np.zeros(
+            (len(chunk), INPUT_CHANNELS, cfg.input_size, cfg.input_size), dtype=np.float32
+        )
         for i, p in enumerate(chunk):
             try:
-                X[i, 0] = preprocess_for_training(
+                X[i] = preprocess_for_training(
                     p, cfg.input_size, cfg.equalization,
-                    clahe_clip=cfg.clahe_clip, roi=cfg.roi_crop,
+                    roi=cfg.roi_crop, roi_margin=cfg.roi_margin,
                 )
             except (ValueError, OSError, cv2.error):
                 pass

@@ -13,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
-from core.config import CLASSES
+from core.config import CLASSES, INPUT_CHANNELS
 
 APP_DIR_NAME = "AquaCNN"
 MODEL_GLOB = "*.npz"
@@ -141,21 +141,45 @@ def models_dir() -> Path:
     return path
 
 
+def _model_channels(path: Path) -> int | None:
+    """Lee ``in_channels`` de un .npz sin cargar los pesos; None si no se puede."""
+    try:
+        import json
+
+        import numpy as np
+
+        with np.load(path, allow_pickle=False) as data:
+            if "meta" not in data:
+                return None
+            return int(json.loads(str(data["meta"])).get("in_channels", 1))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def ensure_models() -> Path:
-    """Copia los modelos incluidos si la carpeta del usuario aún no tiene ninguno."""
+    """Copia o actualiza los modelos incluidos en la carpeta del usuario."""
     target = models_dir()
     bundled = resource_path("Modelos entrenados")
     try:
         same = bundled.resolve() == target.resolve()
     except OSError:
         same = True
-    if bundled.exists() and not same and not any(target.glob(MODEL_GLOB)):
+    if bundled.exists() and not same:
         for f in bundled.iterdir():
-            if f.is_file() and f.suffix.lower() == ".npz":
-                try:
-                    shutil.copy2(f, target / f.name)
-                except OSError:
-                    continue
+            if not (f.is_file() and f.suffix.lower() == ".npz"):
+                continue
+            dest = target / f.name
+            try:
+                # Actualiza si el modelo empaquetado es más nuevo o si la copia
+                # local es de una versión antigua (por ejemplo, escala de grises).
+                replace = not dest.exists() or f.stat().st_mtime > dest.stat().st_mtime + 1
+                if not replace:
+                    local_ch = _model_channels(dest)
+                    replace = local_ch is not None and local_ch != INPUT_CHANNELS
+                if replace:
+                    shutil.copy2(f, dest)
+            except OSError:
+                continue
     return target
 
 
